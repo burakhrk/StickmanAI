@@ -1,6 +1,25 @@
 function extractJsonString(result) {
+  const outputTextFromItems = Array.isArray(result?.output)
+    ? result.output
+        .flatMap((item) => Array.isArray(item?.content) ? item.content : [])
+        .map((content) => {
+          if (typeof content?.text === "string") {
+            return content.text;
+          }
+
+          if (typeof content?.refusal === "string") {
+            return content.refusal;
+          }
+
+          return "";
+        })
+        .filter(Boolean)
+        .join("\n\n")
+    : "";
+
   const raw =
     result?.output_text ||
+    outputTextFromItems ||
     result?.candidates?.[0]?.content?.parts?.[0]?.text;
 
   if (!raw) {

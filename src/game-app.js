@@ -52,10 +52,10 @@ import { requestStructuredJson } from "./ai-client.js";
         });
     } else {
         console.error("Firebase configuration is missing. Chat functionality is disabled.");
-        const chatInput = document.getElementById('chat-input');
-        const sendButton = document.getElementById('send-button');
-        chatInput.placeholder = "Chat disabled (Firebase missing)";
-        sendButton.disabled = true;
+        const chatContainer = document.querySelector('.chat-container');
+        if (chatContainer) {
+            chatContainer.style.display = 'none';
+        }
     }
 
     // --- API & GAME STATE SETUP ---
