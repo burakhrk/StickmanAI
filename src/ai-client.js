@@ -1,5 +1,7 @@
 function extractJsonString(result) {
-  const raw = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+  const raw =
+    result?.output_text ||
+    result?.candidates?.[0]?.content?.parts?.[0]?.text;
 
   if (!raw) {
     throw new Error("API returned empty JSON string.");

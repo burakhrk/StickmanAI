@@ -7,7 +7,7 @@ This project was converted from a single `index.html` file into a Vercel-friendl
 - `src/main.js`: frontend entrypoint
 - `src/game-app.js`: main canvas/game/chat logic
 - `src/env.js`: client-side environment loading for Vite
-- `api/generate.js`: Vercel Function that proxies Gemini requests with a server-side key
+- `api/generate.js`: Vercel Function that proxies OpenAI Responses API requests with a server-side key
 - `legacy/index.inline.html`: backup of the original one-file version
 
 ## Run locally
@@ -37,8 +37,8 @@ Use `dev:vercel` when you want `/api/generate` to work locally.
 Copy `.env.example` to `.env` and fill in the values you need.
 
 - `VITE_*` values are exposed to the browser through Vite and are appropriate for Firebase client config.
-- `GEMINI_API_KEY` stays server-side inside the Vercel Function.
-- `GEMINI_MODEL` is optional and defaults to `gemini-2.5-flash`.
+- `OPENAI_API_KEY` stays server-side inside the Vercel Function.
+- `OPENAI_MODEL` is optional and defaults to `gpt-5.4`.
 
 ## Deploy to Vercel
 
@@ -49,6 +49,6 @@ Copy `.env.example` to `.env` and fill in the values you need.
 ## Important feedback on the original file
 
 - The original HTML mixed UI, game loop, Firebase setup, and AI calls in one file, which makes maintenance and deployment much harder.
-- The Gemini request was effectively client-side, which is not safe for a real deployment because API keys should stay on the server.
+- The LLM request must stay server-side in Vercel Functions so the API key never reaches the browser.
 - The app still executes AI-generated JavaScript with `new Function(...)`. That is a serious security risk for a public deployment and should be redesigned before exposing this widely.
 - Tailwind is still loaded from the CDN to keep the migration small. If you want a more production-polished setup, the next step is to replace it with a normal Tailwind build or convert the remaining utility classes to local CSS.
