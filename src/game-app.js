@@ -1,0 +1,1582 @@
+﻿import { initializeApp } from "firebase/app";
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "firebase/auth";
+import { getFirestore, collection, addDoc, query, onSnapshot, setLogLevel } from "firebase/firestore";
+import { apiUrl, appId, firebaseConfig, initialAuthToken } from "./env.js";
+import {
+    accessorySchema,
+    attackSchema,
+    buildAccessorySystemPrompt,
+    buildAttackSystemPrompt,
+    buildIdeasPayload,
+    DEFAULT_ACCESSORY_IDEAS,
+    DEFAULT_ATTACK_IDEAS,
+} from "./ai-config.js";
+import { requestStructuredJson } from "./ai-client.js";
+
+// --- FIREBASE SETUP (MANDATORY FOR PERSISTENCE) ---
+    let db;
+    let auth;
+    let userId = 'loading'; // Will be set after auth
+    let userName = 'P1 (Loading)';
+
+    // Initialize Firebase
+    if (Object.keys(firebaseConfig).length > 0) {
+        const app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+        auth = getAuth(app);
+        setLogLevel(import.meta.env.DEV ? 'debug' : 'error');
+
+        // Authentication Setup
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                userId = user.uid;
+                userName = `P1 (${user.uid.substring(0, 4)}...)`;
+                console.log("Authenticated user:", userId);
+                setupChatListener();
+            } else {
+                try {
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(auth, initialAuthToken);
+                    } else {
+                        const anonUser = await signInAnonymously(auth);
+                        userId = anonUser.user.uid;
+                        userName = `P1 (${userId.substring(0, 4)}...)`;
+                        setupChatListener();
+                    }
+                } catch (error) {
+                    console.error("Firebase Auth Error: Falling back to anonymous or error state.", error);
+                    userId = 'anonymous_error';
+                    setupChatListener();
+                }
+            }
+        });
+    } else {
+        console.error("Firebase configuration is missing. Chat functionality is disabled.");
+        const chatInput = document.getElementById('chat-input');
+        const sendButton = document.getElementById('send-button');
+        chatInput.placeholder = "Sohbet devre dÄ±ÅŸÄ± (Firebase eksik)";
+        sendButton.disabled = true;
+    }
+
+    // --- API & GAME STATE SETUP ---
+
+    let isGamePaused = true; // YENÄ°: BaÅŸlangÄ±Ã§ta duraklatÄ±lmÄ±ÅŸ
+    let accessoryIdCounter = 0; // Aksesuar kimliklerini izlemek iÃ§in
+
+    // --- CANVAS AND SETUP (DOM Element Declarations Consolidated Here) ---
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const FLOOR_Y = canvas.height - 50; 
+    
+    const loadingOverlay = document.getElementById('loading-overlay'); 
+    const pausePlayButton = document.getElementById('pause-play-button');
+    const restartButton = document.getElementById('restart-button'); // YENÄ°: Restart butonu
+    const generateCodeAttackButton = document.getElementById('generate-attack-code');
+    const generateCodeAccessoryButton = document.getElementById('generate-accessory-code');
+    
+    // REDECLARATION FIX: TÃ¼m prompt ve display elementlerini buraya taÅŸÄ±
+    const attackPromptInput = document.getElementById('attack-prompt-input');
+    const accessoryPromptInput = document.getElementById('accessory-prompt-input');
+    const codeDisplayAttack = document.getElementById('code-display-attack');
+    const codeDisplayAccessory = document.getElementById('code-display-accessory');
+
+    
+    // --- GAME CONSTANTS ---
+    const GRAVITY = 0.5;
+    const AIR_DRAG = 0.99;
+    const GROUND_FRICTION = 0.85;
+
+    
+    // --- MOUSE TRACKING ---
+    let mouseX = canvas.width / 2;
+    let mouseY = canvas.height / 2;
+
+    canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        mouseX = e.clientX - rect.left;
+        mouseY = e.clientY - rect.top;
+    });
+
+    // --- DYNAMIC FUNCTIONS & STATE ---
+    // VarsayÄ±lan saldÄ±rÄ± fonksiyonu (Geri tepme)
+    const defaultAttack = function(player, opponent, ctx, canvas, mouseX, mouseY) {
+        console.log("VarsayÄ±lan geri tepme saldÄ±rÄ±sÄ± Ã§alÄ±ÅŸÄ±yor.");
+        if (Math.abs(player.x - opponent.x) < 50) {
+             opponent.takeDamage(5);
+             opponent.vx += 10 * player.facing;
+        }
+        player.vx -= 2 * player.facing; // Geri tepme
+    };
+
+    let dynamicAttackFunction = defaultAttack; // BaÅŸlangÄ±Ã§ta varsayÄ±lan saldÄ±rÄ±
+
+    // YENÄ°: Ã‡oklu Aksesuarlar Dizisi
+    let currentAccessories = [];
+
+    // YENÄ°: Mermiler ve PartikÃ¼ller dizisi
+    let projectiles = [];
+    window.projectiles = projectiles; // FIX: Mermi dizisini global olarak eriÅŸilebilir yap
+    let particles = []; // YENÄ°: PartikÃ¼l dizisi
+    
+    // --- AI SaldÄ±rÄ± FonksiyonlarÄ± (AI'nÄ±n Kendi SaldÄ±rÄ± MantÄ±ÄŸÄ±) ---
+    // AI Temel SaldÄ±rÄ±: Basit mermi fÄ±rlatma
+    const aiBasicAttack = function(ai, opponent) {
+        const handRX = ai.x + (ai.facing * 15);
+        const handRY = ai.y - 15;
+        const speed = 15;
+        const angle = Math.atan2(opponent.y - handRY, opponent.x - handRX);
+        const vx = Math.cos(angle) * speed;
+        const vy = Math.sin(angle) * speed;
+        const size = ai.headRadius * 0.3;
+        const color = ai.color; // KÄ±rmÄ±zÄ±
+        const drawCode = "ctx.fillStyle=color; ctx.beginPath(); ctx.arc(x, y, size, 0, 2*Math.PI); ctx.fill();";
+        
+        spawnProjectile(handRX, handRY, vx, vy, 10, size, color, drawCode, 
+            "p.x += p.vx; p.y += p.vy;"
+        );
+    };
+
+    // AI Ã–zel SaldÄ±rÄ±: Daha gÃ¼Ã§lÃ¼, yavaÅŸ mermi (Can Ã‡alma Efekti iÃ§in)
+    const aiSpecialAttack = function(ai, opponent) {
+        const handRX = ai.x + (ai.facing * 15);
+        const handRY = ai.y - 15;
+        const speed = 8;
+        const angle = Math.atan2(opponent.y - handRY, opponent.x - handRX);
+        const vx = Math.cos(angle) * speed;
+        const vy = Math.sin(angle) * speed;
+        const size = ai.headRadius * 0.6;
+        const color = '#8A2BE2'; // Mor
+        const drawCode = "ctx.fillStyle=color; ctx.shadowBlur=15; ctx.shadowColor=color; ctx.beginPath(); ctx.fillRect(x-size, y-size, size*2, size*2); ctx.fill(); ctx.shadowBlur=0;";
+        
+        spawnProjectile(handRX, handRY, vx, vy, 15, size, color, drawCode, 
+            // Mor bÃ¼yÃ¼ yavaÅŸ hareket eder ve yavaÅŸÃ§a yukarÄ± doÄŸru ivmelenir (BÃ¼yÃ¼ Efekti)
+            "p.vx *= 0.99; p.vy *= 0.99; p.vy -= 0.1; p.x += p.vx; p.y += p.vy;"
+        );
+    };
+
+    let selectedDifficulty = 'easy'; // BaÅŸlangÄ±Ã§ zorluk seviyesi
+    let aiLastAttackTime = 0; // AI saldÄ±rÄ± beklemesini kontrol etmek iÃ§in
+    const AI_ATTACK_DELAY_BASE = 1.5; // Saniye
+
+    
+    // --- PROJECTILE CLASS ---
+    class Projectile {
+        /**
+         * @param {string} drawCode Merminin nasÄ±l Ã§izileceÄŸini belirleyen saf Canvas kodu (x, y, size, color'a eriÅŸir)
+         * @param {string} behaviorCode Merminin update mantÄ±ÄŸÄ±nÄ± belirleyen saf JS kodu (p, player, opponent, GRAVITY, FLOOR_Y'a eriÅŸir)
+         */
+        constructor(x, y, vx, vy, damage, size = 5, color = '#000000', drawCode = null, behaviorCode = null) {
+            this.x = x;
+            this.y = y;
+            this.vx = vx;
+            this.vy = vy;
+            this.damage = damage;
+            this.size = size;
+            this.color = color;
+            this.isAlive = true;
+            this.drawCode = drawCode; 
+            
+            this.customUpdate = null;
+            if (behaviorCode && behaviorCode.length > 0) {
+                try {
+                    // p: mermi nesnesinin kendisi (this), player: P1, opponent: P2, GRAVITY: oyun sabiti, FLOOR_Y: zemin
+                    this.customUpdate = new Function('p', 'player', 'opponent', 'GRAVITY', 'FLOOR_Y', behaviorCode);
+                } catch(e) {
+                    console.error("Projectile behavior function creation failed:", e);
+                    this.customUpdate = null;
+                }
+            }
+        }
+
+        update() {
+            if (!this.isAlive) return;
+            
+            if (this.customUpdate) { // Execute custom logic
+                try {
+                    this.customUpdate(this, player, computer, GRAVITY, FLOOR_Y);
+                } catch(e) {
+                    console.error("Custom projectile update failed:", e);
+                    this.isAlive = false;
+                }
+            } else { // Fixed logic (default)
+                this.x += this.vx;
+                this.y += this.vy;
+                // YerÃ§ekimi yoksa lineer hareket
+            }
+            
+            // Basit mermi Ã¶mrÃ¼/sÄ±nÄ±r kontrolÃ¼ (Ekran dÄ±ÅŸÄ±na Ã§Ä±kanlarÄ± kaldÄ±r)
+            if (this.x < 0 || this.x > canvas.width || this.y > FLOOR_Y || this.y < 0) {
+                this.isAlive = false;
+            }
+        }
+
+        draw() {
+            if (!this.isAlive) return;
+            ctx.save();
+            
+            if (this.drawCode && this.drawCode.length > 0) {
+                 // Dinamik Ã§izim kodu (AI tarafÄ±ndan tanÄ±mlanÄ±rsa)
+                 try {
+                    // YENÄ°: player ve computer nesneleri de Ã§izim koduna geÃ§irilir
+                    const func = new Function('ctx', 'x', 'y', 'size', 'color', 'player', 'computer', this.drawCode);
+                    // Koda merminin mevcut konumu, boyutu, rengi ve global oyun nesneleri gÃ¶nderilir.
+                    func(ctx, this.x, this.y, this.size, this.color, player, computer);
+                 } catch(e) {
+                     console.error("Projectile draw error:", e);
+                     this.isAlive = false; // Hata veren mermiyi kaldÄ±r
+                 }
+            } else {
+                // VarsayÄ±lan Ã§izim: Basit daire
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
+        }
+    }
+    window.Projectile = Projectile; // FIX: Projectile sÄ±nÄ±fÄ±nÄ± global olarak eriÅŸilebilir yap
+    
+    /**
+     * Mermi oluÅŸturur ve fÄ±rlatÄ±r. (AI kodu bu fonksiyonu kullanmalÄ±dÄ±r)
+     * @param {number} startX BaÅŸlangÄ±Ã§ X
+     * @param {number} startY BaÅŸlangÄ±Ã§ Y
+     * @param {number} vx Yatay HÄ±z
+     * @param {number} vy Dikey HÄ±z
+     * @param {number} damage Hasar (ATTACK_DAMAGE ile Ã§aÄŸÄ±rÄ±lmalÄ±)
+     * @param {number} size Boyut (Opsiyonel, varsayÄ±lan 5)
+     * @param {string} color Renk (Opsiyonel, varsayÄ±lan siyah)
+     * @param {string} drawCode Ã–zel Ã§izim kodu (Opsiyonel)
+     * @param {string} behaviorCode Ã–zel davranÄ±ÅŸ kodu (Opsiyonel)
+     */
+    function spawnProjectile(startX, startY, vx, vy, damage, size = 5, color = '#000000', drawCode = '', behaviorCode = '') {
+        const newProjectile = new Projectile(startX, startY, vx, vy, damage, size, color, drawCode, behaviorCode);
+        projectiles.push(newProjectile);
+        // addMessage('Sistem', `Mermi fÄ±rlatÄ±ldÄ±!`, '#ff6600'); // Debug
+    }
+    window.spawnProjectile = spawnProjectile; // FIX: Mermi fÄ±rlatma fonksiyonunu global olarak eriÅŸilebilir yap
+
+    // --- PARTICLE CLASS & SYSTEM (YENÄ°) ---
+    class Particle {
+        constructor(x, y, vx, vy, color, size, lifespan) {
+            this.x = x;
+            this.y = y;
+            this.vx = vx;
+            this.vy = vy;
+            this.color = color;
+            this.size = size;
+            this.lifespan = lifespan; // Saniye cinsinden
+            this.age = 0;
+            this.isAlive = true;
+        }
+
+        update() {
+            if (!this.isAlive) return;
+
+            this.vx *= 0.98; // Hava direnci
+            this.vy += GRAVITY * 0.1; // Hafif yerÃ§ekimi
+            this.x += this.vx;
+            this.y += this.vy;
+
+            this.age += 1/60; // 60 FPS varsayÄ±mÄ±
+            if (this.age > this.lifespan) {
+                this.isAlive = false;
+            }
+        }
+
+        draw() {
+            if (!this.isAlive) return;
+            const alpha = 1 - (this.age / this.lifespan); // YaÅŸa baÄŸlÄ± saydamlÄ±k
+            ctx.fillStyle = `rgba(${parseInt(this.color.substring(1,3), 16)}, ${parseInt(this.color.substring(3,5), 16)}, ${parseInt(this.color.substring(5,7), 16)}, ${alpha})`;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.size * alpha, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+    
+    /**
+     * Basit bir partikÃ¼l patlamasÄ± efekti oluÅŸturur.
+     * @param {number} x Merkez X
+     * @param {number} y Merkez Y
+     * @param {number} count PartikÃ¼l sayÄ±sÄ±
+     * @param {string} color Renk kodu (#RRGGBB)
+     * @param {number} size Max boyut
+     * @param {number} maxSpeed Max hÄ±z
+     * @param {number} lifespan YaÅŸam sÃ¼resi (saniye)
+     */
+    function spawnParticleEffect(x, y, count = 10, color = '#FFFFFF', size = 5, maxSpeed = 5, lifespan = 0.5) {
+        for (let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = Math.random() * maxSpeed;
+            const vx = Math.cos(angle) * speed;
+            const vy = Math.sin(angle) * speed;
+            
+            particles.push(new Particle(x, y, vx, vy, color, size, lifespan));
+        }
+    }
+    window.spawnParticleEffect = spawnParticleEffect; // Global olarak eriÅŸilebilir yap
+
+    /**
+     * Stickman Class
+     */
+    class Stickman {
+        // ... Stickman class iÃ§eriÄŸi aynÄ±
+        constructor(x, color, isPlayer = false) {
+            this.headRadius = 15;
+            this.torsoLength = 65; 
+            this.limbLength = 50;
+            this.fullLegLength = 80;
+            this.legSegmentLength = this.fullLegLength / 2; 
+            
+            this.x = x; 
+            this.y = FLOOR_Y - this.fullLegLength; 
+            
+            this.vx = 0; 
+            this.vy = 0; 
+            this.ax = 0; 
+            this.color = color;
+            this.isPlayer = isPlayer;
+            this.onGround = true;
+            this.moveSpeed = 0.7;
+            this.maxSpeed = 5;
+            this.jumpPower = 15;
+
+            this.facing = 1; 
+            this.collisionWidth = 20; 
+
+            this.health = 100;
+            this.isAlive = true;
+
+            this.damping = 0.15; 
+            
+            this.head = {
+                x: x, 
+                y: this.y - this.torsoLength - this.headRadius
+            };
+            this.shoulder = {
+                x: x, 
+                y: this.y - this.torsoLength + 10 
+            };
+
+            this.legPhase = 0; 
+            this.legAmplitude = 0.3; 
+            this.legSpeed = 0.15; 
+        }
+
+        performAttack() {
+            console.log("performAttack called, executing dynamicAttackFunction."); // DEBUG LOG
+            const opponent = this.isPlayer ? computer : player;
+            // Dinamik saldÄ±rÄ± fonksiyonunu mouseX ve mouseY ile Ã§aÄŸÄ±r
+            dynamicAttackFunction(this, opponent, ctx, canvas, mouseX, mouseY);
+        }
+
+        takeDamage(amount) {
+            if (!this.isAlive) return;
+            this.health -= amount;
+            
+            // YENÄ°: Hasar alÄ±ndÄ±ÄŸÄ±nda partikÃ¼l efekti
+            spawnParticleEffect(this.x, this.y - 30, 8, '#FFA0A0', 4, 8, 0.3);
+
+            if (this.health <= 0) {
+                this.health = 0;
+                this.isAlive = false;
+            }
+        }
+
+        update() {
+            if (!this.isAlive) {
+                this.vy += GRAVITY;
+                this.y += this.vy;
+                
+                if (this.y + this.fullLegLength >= FLOOR_Y) {
+                    this.y = FLOOR_Y - this.fullLegLength;
+                    this.vy = 0;
+                }
+                return;
+            }
+
+            this.vx += this.ax * this.moveSpeed;
+
+            if (this.onGround) {
+                this.vx *= GROUND_FRICTION;
+            } else {
+                this.vx *= AIR_DRAG;
+            }
+
+            this.vx = Math.max(-this.maxSpeed, Math.min(this.maxSpeed, this.vx));
+
+            // Facing Update
+            if (this.isPlayer) {
+                this.facing = (mouseX > this.x) ? 1 : -1;
+            } else {
+                // Basit AI Facing (P2)
+                 if (player.x > this.x && player.x - this.x > 10) {
+                    this.facing = 1;
+                } else if (player.x < this.x && this.x - player.x > 10) {
+                    this.facing = -1;
+                }
+                
+                // Basit AI Hareketi - ArtÄ±k updateComputerAI fonksiyonunda
+            }
+
+            this.vy += GRAVITY;
+            this.x += this.vx;
+            this.y += this.vy;
+
+            const feetY = this.y + this.fullLegLength;
+            
+            if (feetY >= FLOOR_Y) {
+                this.y = FLOOR_Y - this.fullLegLength; 
+                this.vy = 0; 
+                this.onGround = true;
+
+                if (Math.abs(this.vx) < 0.1) {
+                    this.vx = 0;
+                }
+            } else {
+                this.onGround = false;
+            }
+
+            // Boundary checks
+            const maxRight = canvas.width - 50;
+            const maxLeft = 50;
+            if (this.x < maxLeft) {
+                this.x = maxLeft;
+                this.vx = 0;
+            } else if (this.x > maxRight) {
+                this.x = maxRight;
+                this.vx = 0;
+            }
+            
+            // Walk/Run phase
+            if (this.onGround && Math.abs(this.vx) > 0.5) {
+                this.legPhase += Math.abs(this.vx) * this.legSpeed;
+            } else {
+                this.legPhase *= 0.9;
+            }
+
+            // Jiggly Physics Update
+            const faceOffset = this.facing * 5; 
+            const targetHeadX = this.x + faceOffset;
+            const targetHeadY = this.y - this.torsoLength - this.headRadius; 
+            const targetShoulderY = targetHeadY + this.headRadius + 10;
+            
+            this.head.x += (targetHeadX - this.head.x) * this.damping;
+            this.head.y += (targetHeadY - this.head.y) * this.damping;
+            this.shoulder.y += (targetShoulderY - this.shoulder.y) * this.damping;
+            this.shoulder.x += (targetHeadX - this.shoulder.x) * this.damping;
+
+            // Yapay eksen sÄ±fÄ±rlama, AI iÃ§in deÄŸil, sadece P1 iÃ§in AX kontrolÃ¼nÃ¼ koru
+            if (this.isPlayer) {
+                this.ax = 0;
+            }
+        }
+
+        draw() {
+            ctx.strokeStyle = this.color;
+            ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+            
+            if (!this.isAlive) {
+                ctx.strokeStyle = 'rgba(150, 150, 150, 0.7)'; 
+            }
+
+            const hipY = this.y;
+            const headX = this.head.x;
+            const headY = this.head.y;
+            const shoulderX = this.shoulder.x;
+            const shoulderY = this.shoulder.y;
+
+            const drawHipX = this.x + (this.facing * 3);
+            
+            const tiltAngle = -this.vx * 0.015; 
+
+            // 1. Head (Kafa)
+            ctx.beginPath();
+            ctx.arc(headX, headY, this.headRadius, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Orijinal renk ayarlarÄ±na geri dÃ¶n
+            ctx.strokeStyle = this.color;
+            ctx.lineWidth = 4;
+            if (!this.isAlive) {
+                ctx.strokeStyle = 'rgba(150, 150, 150, 0.7)'; 
+            }
+            
+            // 2. Torso (GÃ¶vde)
+            ctx.beginPath();
+            ctx.moveTo(shoulderX, shoulderY);
+            ctx.lineTo(drawHipX, hipY); 
+            ctx.stroke();
+
+            // 3. Legs (Ä°ki ParÃ§alÄ± Bacaklar)
+            const legSegment = this.legSegmentLength;
+            const hipOffset = 5; 
+            
+            let leftLegAngle = Math.PI / 2; 
+            let rightLegAngle = Math.PI / 2;
+
+            if (this.isAlive) {
+                if (this.onGround) {
+                    leftLegAngle += Math.sin(this.legPhase) * this.legAmplitude;
+                    rightLegAngle += Math.sin(this.legPhase + Math.PI) * this.legAmplitude;
+                }
+                if (!this.onGround) {
+                    const jumpBend = Math.PI / 4; 
+                    leftLegAngle = Math.PI / 2 + jumpBend;
+                    rightLegAngle = Math.PI / 2 + jumpBend;
+                }
+            } else {
+                leftLegAngle = Math.PI / 2 + Math.PI / 3;
+                rightLegAngle = Math.PI / 2 + Math.PI / 3;
+            }
+            
+            // Sol Bacak
+            const kneeLX = drawHipX - hipOffset + Math.cos(leftLegAngle) * legSegment * 0.2; 
+            const kneeLY = hipY + Math.sin(leftLegAngle) * legSegment; 
+            let footLX = kneeLX + Math.cos(leftLegAngle + Math.PI / 10) * legSegment;
+            let footLY = kneeLY + Math.sin(leftLegAngle + Math.PI / 10) * legSegment; 
+            if (this.onGround && this.isAlive) { footLY = FLOOR_Y; }
+            ctx.beginPath(); ctx.moveTo(drawHipX - hipOffset, hipY); ctx.lineTo(kneeLX, kneeLY); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(kneeLX, kneeLY); ctx.lineTo(footLX, footLY); ctx.stroke();
+
+
+            // SaÄŸ Bacak
+            const kneeRX = drawHipX + hipOffset + Math.cos(rightLegAngle) * legSegment * 0.2; 
+            const kneeRY = hipY + Math.sin(rightLegAngle) * legSegment; 
+            let footRX = kneeRX + Math.cos(rightLegAngle + Math.PI / 10) * legSegment;
+            let footRY = kneeRY + Math.sin(rightLegAngle + Math.PI / 10) * legSegment; 
+            if (this.onGround && this.isAlive) { footRY = FLOOR_Y; }
+            ctx.beginPath(); ctx.moveTo(drawHipX + hipOffset, hipY); ctx.lineTo(kneeRX, kneeRY); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(kneeRX, kneeRY); ctx.lineTo(footRX, footRY); ctx.stroke();
+
+
+            // 4. Arms (Kollar - Hedefleme)
+            const targetX = this.isPlayer ? mouseX : player.head.x;
+            const targetY = this.isPlayer ? mouseY : player.head.y;
+            const angleToTarget = Math.atan2(targetY - shoulderY, targetX - shoulderX);
+            const armOffsetAngle = Math.PI / 12;
+            const armLength = this.limbLength * 1.5;
+
+            const leftArmAngle = angleToTarget - armOffsetAngle;
+            const rightArmAngle = angleToTarget + armOffsetAngle;
+            
+            // Left Arm
+            const handLX = shoulderX + Math.cos(leftArmAngle) * armLength;
+            const handLY = shoulderY + Math.sin(leftArmAngle) * armLength;
+            ctx.beginPath(); ctx.moveTo(shoulderX, shoulderY); ctx.lineTo(handLX, handLY); ctx.stroke();
+
+            // Right Arm
+            const handRX = shoulderX + Math.cos(rightArmAngle) * armLength;
+            const handRY = shoulderY + Math.sin(rightArmAngle) * armLength;
+            ctx.beginPath(); ctx.moveTo(shoulderX, shoulderY); ctx.lineTo(handRX, handRY); ctx.stroke();
+
+            // Sadece P1 iÃ§in dinamik aksesuar Ã§izimi
+            // Buradaki logic P1'in aksesuarlarÄ±nÄ± Ã§izer
+            if (this.isPlayer) {
+                ctx.fillStyle = this.isAlive ? '#374151' : 'transparent';
+                ctx.beginPath();
+                ctx.arc(handRX, handRY, 5, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // --- YENÄ° KONUM HESAPLAMALARI ---
+                const wristLength = armLength * 0.6; // Omuzdan bileÄŸe olan uzaklÄ±k (Ã¶r: %60)
+                const wristRX = shoulderX + Math.cos(rightArmAngle) * wristLength;
+                const wristRY = shoulderY + Math.sin(rightArmAngle) * wristLength;
+                
+                const neckX = shoulderX;
+                const neckY = shoulderY - 5;
+                
+                const eyeX = headX + (this.facing * 5); // Basit gÃ¶z pozisyonu
+                const eyeY = headY;
+                
+                const headTopX = headX;
+                const headTopY = headY - this.headRadius - 5; // Kafa Ã¼stÃ¼ (5 birim yukarÄ±)
+                
+                // YENÄ°: SÄ±rt Ã‡antasÄ± Konumu (GÃ¶vde merkezinden 8 birim geride, omuz hizasÄ±nda)
+                const backX = this.x - (this.facing * 8); 
+                const backY = shoulderY + 5; 
+
+                // --- DYNAMIC ACCESSORY DRAWING ---
+                const accessoryScale = this.headRadius / 15; // Ã–lÃ§ek faktÃ¶rÃ¼nÃ¼ hesapla
+                
+                // YENÄ°: Hata yakalama ve kaldÄ±rma iÃ§in dizi
+                const accessoriesToRemove = [];
+
+                currentAccessories.forEach((accessory, index) => {
+                    
+                    let accessoryX, accessoryY;
+                    let accessoryAngle = 0; 
+                    let drawOnBothFeet = false;
+
+                    // KonumlandÄ±rma MantÄ±ÄŸÄ±
+                    if (accessory.location === 'head') {
+                        accessoryX = headX;
+                        accessoryY = headY;
+                        accessoryAngle = tiltAngle; 
+                    } else if (accessory.location === 'head_top') {
+                        accessoryX = headTopX;
+                        accessoryY = headTopY;
+                        accessoryAngle = tiltAngle; 
+                    } else if (accessory.location === 'eyes') {
+                        accessoryX = eyeX;
+                        accessoryY = eyeY;
+                        accessoryAngle = tiltAngle; 
+                    } else if (accessory.location === 'neck') {
+                        accessoryX = neckX;
+                        accessoryY = neckY;
+                        accessoryAngle = tiltAngle; 
+                    } else if (accessory.location === 'hand') {
+                        accessoryX = handRX; // SaÄŸ el
+                        accessoryY = handRY;
+                    } else if (accessory.location === 'wrist') {
+                        accessoryX = wristRX; // SaÄŸ bilek
+                        accessoryY = wristRY;
+                        accessoryAngle = angleToTarget; 
+                    } else if (accessory.location === 'torso') {
+                        accessoryX = shoulderX;
+                        accessoryY = shoulderY + 5; 
+                        accessoryAngle = tiltAngle; 
+                    } else if (accessory.location === 'back') { // YENÄ° KONUM
+                        accessoryX = backX;
+                        accessoryY = backY; 
+                        accessoryAngle = tiltAngle; 
+                    } else if (accessory.location === 'foot') {
+                        drawOnBothFeet = true;
+                    }
+                    
+                    // AksesuarÄ± Ã§iz
+                    try {
+                        if (drawOnBothFeet) {
+                            // Sol Ayak
+                            ctx.save();
+                            ctx.translate(footLX, footLY);
+                            accessory.code(this, ctx, 0, 0, 0, accessoryScale); 
+                            ctx.restore();
+                            // SaÄŸ Ayak
+                            ctx.save();
+                            ctx.translate(footRX, footRY);
+                            accessory.code(this, ctx, 0, 0, 0, accessoryScale); 
+                            ctx.restore();
+                        } else {
+                            // DiÄŸer tÃ¼m konumlar
+                            ctx.save();
+                            ctx.translate(accessoryX, accessoryY);
+                            ctx.rotate(accessoryAngle);
+                            // Koda x=0, y=0 gÃ¶nderildiÄŸi iÃ§in translate'i burada yapÄ±yoruz
+                            accessory.code(this, ctx, 0, 0, accessoryAngle, accessoryScale); 
+                            ctx.restore();
+                        }
+                    } catch (e) {
+                        console.error(`ERROR drawing accessory ${accessory.description}:`, e);
+                        accessoriesToRemove.push(accessory.id);
+                    }
+                });
+
+                // HatalÄ± aksesuarlarÄ± dÃ¶ngÃ¼ dÄ±ÅŸÄ±nda kaldÄ±r
+                if (accessoriesToRemove.length > 0) {
+                    currentAccessories = currentAccessories.filter(acc => !accessoriesToRemove.includes(acc.id));
+                    renderAccessoryList();
+                    addMessage('Sistem', `Hata veren ${accessoriesToRemove.length} aksesuar kaldÄ±rÄ±ldÄ±. LÃ¼tfen konsolu kontrol edin.`, '#b91c1c');
+                }
+            }
+        }
+
+        move(direction) {
+            if (!this.isAlive || isGamePaused) return; // DuraklatÄ±lmÄ±ÅŸsa hareket etme
+
+            if (direction === 'left') {
+                this.ax = -1;
+            } else if (direction === 'right') {
+                this.ax = 1;
+            } else if (direction === 'jump' && this.onGround) {
+                this.vy = -this.jumpPower; 
+                this.onGround = false;
+            }
+        }
+    }
+
+    // --- GAME OBJECTS ---
+    const player = new Stickman(150, '#10b981', true); 
+    const computer = new Stickman(canvas.width - 150, '#ef4444', false); 
+    
+    // --- YENÄ°: OYUN DURUMUNU SIFIRLAMA FONKSÄ°YONU ---
+    function restartGame() {
+        // Karakter pozisyon ve can sÄ±fÄ±rlama
+        player.health = 100;
+        player.isAlive = true;
+        player.x = 150;
+        player.y = FLOOR_Y - player.fullLegLength;
+        player.vx = 0;
+        player.vy = 0;
+        
+        computer.health = 100;
+        computer.isAlive = true;
+        computer.x = canvas.width - 150;
+        computer.y = FLOOR_Y - computer.fullLegLength;
+        computer.vx = 0;
+        computer.vy = 0;
+
+        // Mermileri ve PartikÃ¼lleri temizle
+        projectiles = [];
+        particles = [];
+        
+        // Dinamik iÃ§eriÄŸi sÄ±fÄ±rla (SaldÄ±rÄ± ve Ekipmanlar)
+        resetAttack();
+        
+        // Oyun durumunu baÅŸlat
+        isGamePaused = false;
+        pausePlayButton.textContent = 'Oyunu Durdur';
+        // Buton rengini sadece metin deÄŸiÅŸtirme durumunda ayarlÄ±yoruz, aksi halde CSS gradient kullanacak
+        // pausePlayButton.style.backgroundColor = '#059669'; 
+        addMessage('Sistem', `Oyun yeniden baÅŸlatÄ±ldÄ±. Zorluk: ${selectedDifficulty.toUpperCase()}`, '#059669');
+        requestAnimationFrame(gameLoop);
+    }
+
+
+    // --- COLLISION HANDLER ---
+    function handleStickmanCollision(s1, s2) {
+        if (!s1.isAlive || !s2.isAlive) return;
+
+        const dx = s1.x - s2.x;
+        const distance = Math.abs(dx);
+        const requiredSeparation = s1.collisionWidth + s2.collisionWidth; 
+
+        if (distance < requiredSeparation) {
+            const overlap = requiredSeparation - distance;
+
+            if (dx > 0) {
+                s1.x += overlap / 2;
+                s2.x -= overlap / 2;
+            } else {
+                s1.x -= overlap / 2;
+                s2.x += overlap / 2;
+            }
+
+            const bounce = 0.5;
+            const totalVX = s1.vx - s2.vx;
+            
+            s1.vx -= totalVX * bounce;
+            s2.vx += totalVX * bounce;
+            
+            if (Math.abs(s1.vx) < 0.1) s1.vx = 0;
+            if (Math.abs(s2.vx) < 0.1) s2.vx = 0;
+        }
+    }
+
+
+    // --- DRAW UI / HEALTH BARS ---
+    function drawHealthBars() {
+        const BAR_WIDTH = 180;
+        const BAR_HEIGHT = 20;
+        const MARGIN = 20;
+        
+        // --- Player 1 (Sol Alt) ---
+        const p1X = MARGIN;
+        const p1Y = canvas.height - MARGIN - BAR_HEIGHT;
+        const p1HealthPercent = player.health / 100;
+
+        ctx.fillStyle = '#374151'; 
+        ctx.fillRect(p1X, p1Y, BAR_WIDTH, BAR_HEIGHT);
+
+        ctx.fillStyle = player.isAlive ? '#10b981' : '#b91c1c'; 
+        ctx.fillRect(p1X, p1Y, BAR_WIDTH * p1HealthPercent, BAR_HEIGHT);
+        
+        ctx.strokeStyle = '#1f2937';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(p1X, p1Y, BAR_WIDTH, BAR_HEIGHT);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '14px Inter';
+        ctx.textAlign = 'left';
+        ctx.fillText(`${userName} Health: ${player.health}`, p1X + 5, p1Y + 15);
+
+
+        // --- Computer (SaÄŸ Alt) ---
+        const p2X = canvas.width - BAR_WIDTH - MARGIN;
+        const p2Y = canvas.height - MARGIN - BAR_HEIGHT;
+        const p2HealthPercent = computer.health / 100;
+
+        ctx.fillStyle = '#374151';
+        ctx.fillRect(p2X, p2Y, BAR_WIDTH, BAR_HEIGHT);
+
+        ctx.fillStyle = computer.isAlive ? '#ef4444' : '#10b981';
+        ctx.fillRect(p2X + BAR_WIDTH * (1 - p2HealthPercent), p2Y, BAR_WIDTH * p2HealthPercent, BAR_HEIGHT);
+        
+        ctx.strokeStyle = '#1f2937';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(p2X, p2Y, BAR_WIDTH, BAR_HEIGHT);
+        
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'right';
+        ctx.fillText(`AI Health: ${computer.health}`, p2X + BAR_WIDTH - 5, p2Y + 15);
+    }
+
+
+    // --- INPUT HANDLING ---
+    const keys = {};
+
+    // DEBUG LOG: Mousedown olayÄ±nÄ±n tetiklenip tetiklenmediÄŸini kontrol et
+    canvas.addEventListener('mousedown', (e) => {
+        console.log(`Mouse Down: Button=${e.button}, isAlive=${player.isAlive}, isPaused=${isGamePaused}`); 
+        if (e.button === 0 && player.isAlive && !isGamePaused) { 
+            player.performAttack();
+        }
+    });
+
+    window.addEventListener('keydown', (e) => {
+        // Kontrol alanlarÄ±nÄ±n dÄ±ÅŸÄ±nda basÄ±lan tuÅŸlarÄ± yakala
+        if (document.activeElement.id !== 'chat-input' && document.activeElement.id !== 'attack-prompt-input' && document.activeElement.id !== 'accessory-prompt-input' && !isGamePaused) {
+            keys[e.key.toUpperCase()] = true;
+        }
+
+        if (e.key === 'Enter' && document.activeElement.id === 'chat-input') {
+            sendMessage();
+            e.preventDefault(); 
+        }
+        
+    });
+
+    window.addEventListener('keyup', (e) => {
+        keys[e.key.toUpperCase()] = false;
+    });
+
+    // --- CHAT LOGIC (Firestore Integration) ---
+    const chatOutput = document.getElementById('chat-output');
+    const chatInput = document.getElementById('chat-input');
+    const sendButton = document.getElementById('send-button');
+
+    // Helper to format and add message to UI
+    function addMessage(sender, text, color) {
+        const messageElement = document.createElement('div');
+        messageElement.className = 'chat-message';
+        messageElement.innerHTML = `<strong style="color: ${color};">${sender}:</strong> ${text}`;
+        
+        chatOutput.appendChild(messageElement);
+        chatOutput.scrollTop = chatOutput.scrollHeight;
+    }
+    // FIX: addMessage fonksiyonunu global hale getir
+    window.addMessage = addMessage; 
+
+    // Firestore: Send Message
+    async function sendMessage() {
+        const message = chatInput.value.trim();
+        if (message === '' || !db || userId === 'loading' || !auth.currentUser) return;
+
+        try {
+            // Firestore'a mesaj ekle (Public collection)
+            await addDoc(collection(db, `artifacts/${appId}/public/data/chat_messages`), {
+                senderId: auth.currentUser.uid,
+                senderName: userName,
+                text: message,
+                timestamp: Date.now(),
+                color: player.color 
+            });
+            chatInput.value = '';
+        } catch (e) {
+            console.error("Error writing document: ", e);
+            addMessage('Sistem', 'Mesaj gÃ¶nderilemedi (Firestore HatasÄ±).', '#b91c1c');
+        }
+    }
+
+    // Firestore: Real-time Listener Setup
+    function setupChatListener() {
+        const chatCollectionRef = collection(db, `artifacts/${appId}/public/data/chat_messages`);
+        
+        // onSnapshot for real-time updates (client-side sorting is used)
+        onSnapshot(chatCollectionRef, (snapshot) => {
+            const messages = [];
+            snapshot.forEach(doc => {
+                messages.push(doc.data());
+            });
+            
+            // Client-side sorting by timestamp (MUST be done if orderBy is omitted from query)
+            messages.sort((a, b) => a.timestamp - b.timestamp); 
+            
+            chatOutput.innerHTML = ''; // Clear previous messages
+            
+            messages.forEach(msg => {
+                const senderDisplay = msg.senderName.split(' ')[0]; // P1, AI, etc.
+                addMessage(senderDisplay, msg.text, msg.color || '#888888');
+            });
+
+            if (messages.length === 0) {
+                addMessage('Sistem', 'Oyuna hoÅŸ geldiniz! Sohbet kutusunu test edebilirsiniz.', '#888888');
+            }
+        }, (error) => {
+            console.error("Chat Listener Error:", error);
+            addMessage('Sistem', `Sohbet yÃ¼klenirken hata: ${error.message}`, '#b91c1c');
+        });
+    }
+
+    sendButton.addEventListener('click', sendMessage);
+    
+    // --- ACCESSORY RENDERING & REMOVAL ---
+    // const codeDisplayAccessory = document.getElementById('code-display-accessory'); // Redundant const removed
+
+    function renderAccessoryList() {
+        if (currentAccessories.length === 0) {
+            codeDisplayAccessory.innerHTML = 'YÃ¼klÃ¼ Aksesuarlar: Yok.';
+            return;
+        }
+
+        codeDisplayAccessory.innerHTML = ''; // Temizle
+        
+        currentAccessories.forEach(accessory => {
+            const itemDiv = document.createElement('div');
+            itemDiv.className = 'accessory-item';
+            itemDiv.setAttribute('data-id', accessory.id);
+
+            const descSpan = document.createElement('span');
+            // Konum bilgisini kÄ±saltarak gÃ¶ster
+            const locationMap = {
+                'head': 'Kafa', 
+                'head_top': 'Kafa ÃœstÃ¼ (Åžapka)', 
+                'eyes': 'GÃ¶z (GÃ¶zlÃ¼k)', 
+                'neck': 'Boyun (Kolye)', 
+                'hand': 'El (Silah)', 
+                'wrist': 'Bilek (Saat)', 
+                'torso': 'GÃ¶vde (ZÄ±rh)', 
+                'back': 'SÄ±rt (Ã‡anta)', 
+                'foot': 'Ayak (AyakkabÄ±)'
+            };
+            const locationText = locationMap[accessory.location] || accessory.location;
+            
+            // SaldÄ±rÄ± EkipmanÄ± ise ek bir bilgi ekle
+            const equipmentTag = accessory.isAttackEquipment ? ' [SaldÄ±rÄ± EkipmanÄ±]' : '';
+            descSpan.textContent = `[${locationText}] ${accessory.description.split(' (Equipment)')[0]}${equipmentTag}`;
+            
+            const removeButton = document.createElement('span');
+            removeButton.className = 'remove-accessory';
+            removeButton.textContent = 'âŒ';
+            
+            // KaldÄ±rma iÅŸlemi
+            removeButton.onclick = function() {
+                // Diziden bu ID'ye sahip aksesuarÄ± filtrele
+                currentAccessories = currentAccessories.filter(a => a.id !== accessory.id);
+                renderAccessoryList(); // Listeyi yeniden Ã§iz
+                addMessage('Sistem', `Aksesuar "${accessory.description.split(' (Equipment)')[0]}" kaldÄ±rÄ±ldÄ±.`, '#059669');
+            };
+
+            itemDiv.appendChild(descSpan);
+            itemDiv.appendChild(removeButton);
+            codeDisplayAccessory.appendChild(itemDiv);
+        });
+    }
+
+    // --- ATTACK RESET FUNCTION (YENÄ°) ---
+    function resetAttack() {
+        // Dinamik saldÄ±rÄ± fonksiyonunu varsayÄ±lana ayarla
+        dynamicAttackFunction = defaultAttack;
+        // SaldÄ±rÄ± ekipmanlarÄ±nÄ± kaldÄ±r
+        currentAccessories = currentAccessories.filter(acc => !acc.isAttackEquipment);
+        renderAccessoryList();
+        
+        // const codeDisplayAttack = document.getElementById('code-display-attack'); // Redundant const removed
+        codeDisplayAttack.textContent = "YÃ¼klÃ¼ Kod: VarsayÄ±lan geri tepme.";
+        addMessage('Sistem', 'SaldÄ±rÄ± mekaniÄŸi varsayÄ±lana sÄ±fÄ±rlandÄ±. SilahÄ±nÄ±z kaldÄ±rÄ±ldÄ±.', '#ef4444');
+    }
+
+    // FIX: resetAttack fonksiyonunu inline onclick iÃ§in global hale getir
+    window.resetAttack = resetAttack; 
+
+    document.getElementById('reset-attack-button').addEventListener('click', resetAttack);
+
+    // --- PAUSE/PLAY TOGGLE (YENÄ°) ---
+    function togglePausePlay() {
+        // EÄŸer oyun bitmiÅŸse, yeniden baÅŸlatma fonksiyonunu Ã§aÄŸÄ±r
+        if (!player.isAlive || !computer.isAlive) {
+            restartGame();
+            return;
+        }
+
+        isGamePaused = !isGamePaused;
+        if (isGamePaused) {
+            pausePlayButton.textContent = 'Oyunu BaÅŸlat';
+            // pausePlayButton.style.backgroundColor = '#3b82f6'; // CSS gradient'e bÄ±rakÄ±ldÄ±
+            addMessage('Sistem', 'Oyun duraklatÄ±ldÄ±. Kontroller devre dÄ±ÅŸÄ±.', '#3b82f6');
+        } else {
+            pausePlayButton.textContent = 'Oyunu Durdur';
+            // pausePlayButton.style.backgroundColor = '#059669'; // CSS gradient'e bÄ±rakÄ±ldÄ±
+            addMessage('Sistem', 'Oyun baÅŸlatÄ±ldÄ±. Ä°yi eÄŸlenceler!', '#059669');
+            // Oyun duraklatÄ±lmÄ±ÅŸken dÃ¶ngÃ¼ durduysa, tekrar baÅŸlat
+            requestAnimationFrame(gameLoop); 
+        }
+    }
+
+    pausePlayButton.addEventListener('click', togglePausePlay);
+    // YENÄ°: Restart butonu click olayÄ±nÄ± restartGame fonksiyonuna baÄŸla
+    restartButton.addEventListener('click', restartGame);
+
+
+    // --- GENERIC LLM CODE GENERATION FUNCTION ---
+    async function generateCode(promptElement, codeDisplayElement, buttonElement, schemaType, systemPrompt, successMessage) {
+        const promptText = promptElement.value.trim();
+        if (!promptText) {
+            console.error("LÃ¼tfen bir aÃ§Ä±klama girin.");
+            return;
+        }
+        
+        // OYUNU DURAKLAT VE BUTONU DEVRE DIÅžI BIRAK
+        // FIX: KarÅŸÄ±lÄ±klÄ± butonlarÄ± da deaktif et
+        isGamePaused = true; 
+        
+        // YENÄ°: YÃ¼kleme mesajÄ±nÄ± gÃ¼ncelle
+        loadingOverlay.textContent = schemaType === 'attack' ? 'SaldÄ±rÄ± OluÅŸturuluyor...' : 'Aksesuar OluÅŸturuluyor...';
+        loadingOverlay.classList.remove('hidden');
+        
+        buttonElement.disabled = true; 
+        if (schemaType === 'attack') {
+            generateCodeAccessoryButton.disabled = true;
+        } else if (schemaType === 'accessory') {
+            generateCodeAttackButton.disabled = true;
+        }
+
+        let responseSchema = null;
+        let contextData = {};
+        
+        if (schemaType === 'accessory') {
+            responseSchema = accessorySchema;
+            contextData = {
+                headRadius: player.headRadius,
+                torsoLength: player.torsoLength,
+                fullLegLength: player.fullLegLength,
+                limbLength: player.limbLength,
+                facing: player.facing, 
+            };
+        } else if (schemaType === 'attack') {
+            responseSchema = attackSchema;
+        }
+        
+        let userQuery = `Generate the JavaScript code for the following description: ${promptText}`;
+
+        if (schemaType === 'accessory') {
+            userQuery = `The stickman currently has the following physical dimensions: ${JSON.stringify(contextData)}. Based on this context and the user's request: ${promptText}, generate the accessory code.`;
+        } else if (schemaType === 'attack') {
+             userQuery = `Based on the user's request: ${promptText}, generate the attack code in the required JSON format.`;
+        }
+
+        const payload = {
+            contents: [{ parts: [{ text: userQuery }] }],
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+        };
+
+        if (responseSchema) {
+            payload.generationConfig = {
+                responseMimeType: "application/json",
+                responseSchema: responseSchema
+            };
+        }
+
+        let responseText = null;
+
+        try {
+            const result = await requestStructuredJson(apiUrl, payload);
+            responseText = result.data;
+        } catch (error) {
+            console.error("API Ã§aÄŸrÄ±sÄ± baÅŸarÄ±sÄ±z oldu:", error);
+            codeDisplayElement.innerHTML = `<strong>JSON PARSE HATASI:</strong><br>Hata: ${error.message}`;
+            addMessage('Sistem', `AI JSON hatasÄ±: ${error.message}`, '#b91c1c');
+        }
+        
+        // KOD OLUÅžUMU BÄ°TTÄ°ÄžÄ°NDE OYUN PAUSE KALACAK.
+        isGamePaused = true; 
+        loadingOverlay.classList.add('hidden');
+        // FIX: KarÅŸÄ±lÄ±klÄ± butonlarÄ± tekrar aktif et
+        generateCodeAttackButton.disabled = false;
+        generateCodeAccessoryButton.disabled = false;
+        
+        if (responseText) {
+            
+            if (schemaType === 'accessory') {
+                // --- Aksesuar Ä°ÅŸleme MantÄ±ÄŸÄ± (JSON ARRAY) ---
+                const accessoriesToProcess = Array.isArray(responseText) ? responseText : [responseText]; 
+
+                let accessoriesAdded = 0;
+                
+                for (const acc of accessoriesToProcess) {
+                    if (acc.javascriptCode && acc.targetLocation) {
+                        let rawCode = acc.javascriptCode.trim();
+                        const targetLocation = acc.targetLocation;
+                        const description = acc.description || promptText;
+
+                         // AGRESÄ°F KOD TEMÄ°ZLEME: Fonksiyon sarmalayÄ±cÄ±larÄ±nÄ± temizle
+                        const openBraceIndex = rawCode.indexOf('{');
+                        const closeBraceIndex = rawCode.lastIndexOf('}');
+
+                        if (openBraceIndex !== -1 && closeBraceIndex !== -1 && closeBraceIndex > openBraceIndex) {
+                            rawCode = rawCode.substring(openBraceIndex + 1, closeBraceIndex).trim();
+                        } else if (rawCode.startsWith('(') && rawCode.endsWith(')')) {
+                            rawCode = rawCode.substring(1, rawCode.length - 1).trim();
+                        }
+                        rawCode = rawCode.trim(); 
+
+                        // *** FIX: xPos/yPos'u x/y ile otomatik dÃ¼zelt ***
+                        rawCode = rawCode.replace(/xPos/g, 'x').replace(/yPos/g, 'y');
+
+                        try {
+                             // Parametreler: player, ctx, x, y, angle, scale
+                             const newFunc = new Function('player', 'ctx', 'x', 'y', 'angle', 'scale', rawCode);
+                             
+                             const newAccessory = {
+                                 id: 'acc_' + accessoryIdCounter++, // Benzersiz ID
+                                 description: description.length > 50 ? description.substring(0, 47) + '...' : description,
+                                 code: newFunc,
+                                 location: targetLocation
+                             };
+
+                             currentAccessories.push(newAccessory);
+                             accessoriesAdded++;
+
+                        } catch (e) {
+                            codeDisplayElement.innerHTML = `<strong>KOD HATA Ä°Ã‡ERÄ°YOR (Aksesuar #${accessoriesAdded + 1}):</strong><br>Hata: ${e.message}<br>Ham Kod:<pre class="debug-code-section" style="color: #f87171;">${rawCode}</pre>`;
+                            addMessage('Sistem', `AI tarafÄ±ndan Ã¼retilen kod hatalÄ±. Hata: ${e.message}`, '#b91c1c');
+                            return; 
+                        }
+                    } else {
+                        console.error("Accessory object is missing required fields (javascriptCode or targetLocation):", acc);
+                        
+                        codeDisplayElement.innerHTML = `<strong>HATA:</strong> AI, gerekli alanlarÄ± (${acc.javascriptCode ? '' : 'javascriptCode,'} ${acc.targetLocation ? '' : 'targetLocation'}) iÃ§ermeyen bir nesne dÃ¶ndÃ¼rdÃ¼. LÃ¼tfen konsolu kontrol edin.`;
+                        addMessage('Sistem', `AI yapÄ±sal hata: ${acc.description || 'TanÄ±msÄ±z aksesuar'} reddedildi.`, '#b91c1c');
+                    }
+                }
+                
+                if (accessoriesAdded > 0) {
+                    renderAccessoryList(); 
+                    addMessage('Sistem', `BaÅŸarÄ±yla ${accessoriesAdded} yeni aksesuar yÃ¼klendi!`, '#059669');
+                } else {
+                    console.error("API returned a structure that resulted in 0 valid accessories (Accessories Array):", responseText);
+
+                    codeDisplayElement.innerHTML = `<strong>Hata:</strong> API'dan geÃ§erli aksesuar kodu gelmedi. (0 Ã¶ÄŸe yÃ¼klendi)<br>LÃ¼tfen konsolu kontrol edin.`;
+                    addMessage('Sistem', 'API geÃ§erli aksesuar kodu iÃ§ermeyen yanÄ±t dÃ¶ndÃ¼rdÃ¼.', '#b91c1c');
+                }
+            } else if (schemaType === 'attack') {
+                // --- SaldÄ±rÄ± Ä°ÅŸleme MantÄ±ÄŸÄ± (JSON OBJECT) ---
+                const attackData = responseText;
+                let drawCode = attackData.requiredEquipmentDrawCode || '';
+                let behaviorCode = attackData.projectileBehaviorCode || ''; // YENÄ°: DavranÄ±ÅŸ kodu
+                let attackLogic = attackData.javascriptCode || '';
+                const attackDescription = attackData.description || 'TanÄ±msÄ±z SaldÄ±rÄ±';
+                
+                // Kodu temizle
+                attackLogic = attackLogic.trim().replace(/^```(js|javascript)?\s*/i, '').replace(/\s*```$/, '');
+                drawCode = drawCode.trim().replace(/^```(js|javascript)?\s*/i, '').replace(/\s*```$/, '');
+                behaviorCode = behaviorCode.trim().replace(/^```(js|javascript)?\s*/i, '').replace(/\s*```$/, '');
+                
+                // 1. Ã–nceki saldÄ±rÄ± ekipmanÄ±nÄ± kaldÄ±r
+                currentAccessories = currentAccessories.filter(acc => !acc.isAttackEquipment);
+
+                if (drawCode.trim().length > 0) {
+                    // FIX: xPos/yPos'u x/y ile otomatik dÃ¼zelt
+                    let fixedDrawCode = drawCode.replace(/xPos/g, 'x').replace(/yPos/g, 'y');
+                    // Gelen kodun iÃ§indeki satÄ±r sonlarÄ±nÄ± kaldÄ±rÄ±p gÃ¼venli hale getir
+                    fixedDrawCode = fixedDrawCode.replace(/\n/g, ' ').replace(/\r/g, ' ');
+                    
+                    // *** YENÄ° DÃœZELTME: 'scale' deÄŸiÅŸkeninin tekrar tanÄ±mlanmasÄ±nÄ± Ã¶nle ***
+                    fixedDrawCode = fixedDrawCode.replace(/const\s+scale\s*=.+?;/g, ''); 
+
+                    try {
+                        // Aksesuar kodu parametreleri: player, ctx, x, y, angle, scale
+                        const newFunc = new Function('player', 'ctx', 'x', 'y', 'angle', 'scale', fixedDrawCode);
+                        const newEquipment = {
+                            id: 'att_eq_' + Date.now(),
+                            description: attackDescription + " (Equipment)",
+                            code: newFunc,
+                            location: 'hand', // SaldÄ±rÄ± silahlarÄ± her zaman eldedir
+                            isAttackEquipment: true // Bu Ã¶ÄŸenin saldÄ±rÄ± ekipmanÄ± olduÄŸunu iÅŸaretle
+                        };
+                        currentAccessories.push(newEquipment);
+                        renderAccessoryList(); // Aksesuar listesini gÃ¼ncelle
+                        addMessage('Sistem', `SaldÄ±rÄ± EkipmanÄ± (${attackDescription}) yÃ¼klendi.`, '#d97706');
+                    } catch (e) {
+                        // EÄŸer Ã§izim kodu hatalÄ±ysa, bu kÄ±smÄ± logla ama mantÄ±ÄŸÄ± Ã§alÄ±ÅŸtÄ±rmaya devam et
+                        addMessage('Sistem', `Hata: Ekipman Ã§izim kodu hatalÄ±. SilahsÄ±z devam ediliyor. Hata: ${e.message}`, '#b91c1c');
+                        drawCode = ''; // HatalÄ± Ã§izim kodunu temizle
+                        console.error("Equipment Draw Code Error (Hata veren Ã§izim kodu):", fixedDrawCode, e);
+                    }
+                }
+
+                // --- Ana SaldÄ±rÄ± MantÄ±ÄŸÄ± Entegrasyonu ---
+                let correctedLogic = attackLogic
+                    .replace(/player\.facingRight/g, 'player.facing > 0'); // YanlÄ±ÅŸ deÄŸiÅŸkeni dÃ¼zelt
+
+                // HÄ±z deÄŸiÅŸkenlerini kontrol et ve dÃ¼zelt (velX -> vx)
+                correctedLogic = correctedLogic.replace(/opponent\.velX/g, 'opponent.vx').replace(/opponent\.velY/g, 'opponent.vy');
+                correctedLogic = correctedLogic.replace(/player\.velX/g, 'player.vx').replace(/player\.velY/g, 'player.vy');
+                
+                // *** YENÄ° DÃœZELTME: HandRX/RY const redeclaration hatasÄ±nÄ± Ã¶nle ***
+                // handRX ve handRY'nin const ile tekrar tanÄ±mlanmasÄ±nÄ± Ã¶nle (eÄŸer AI eklediyse)
+                correctedLogic = correctedLogic
+                    .replace(/const\s+handRX\s*=/g, 'handRX =')
+                    .replace(/const\s+handRY\s*=/g, 'handRY =');
+                
+                
+                try {
+                    // Sabit hasar deÄŸerini enjekte et (10 olarak belirlendi)
+                    const FIXED_DAMAGE = 10;
+
+                    // Mermi DavranÄ±ÅŸ Kodunu Dizeye Ekle
+                    const behaviorCodeString = behaviorCode.trim().replace(/\n/g, ' ').replace(/\r/g, ' ');
+
+                    // SaldÄ±rÄ± sÄ±rasÄ±nda silahÄ±n/merminin Ã§izimini ve mantÄ±ÄŸÄ±nÄ± birleÅŸtir
+                    const fullCode = 
+                        `// --- SABÄ°T HASAR DEÄžERÄ° ENJEKTE EDÄ°LDÄ° ---\n` +
+                        `const ATTACK_DAMAGE = ${FIXED_DAMAGE};\n` + 
+                        `const PROJECTILE_BEHAVIOR_CODE = \`${behaviorCodeString}\`;\n` + // DavranÄ±ÅŸ kodunu sabit olarak ekle
+                        `// --- Kafa ve El PozisyonlarÄ±nÄ± Hesapla (Player context) ---\n` +
+                        `const shoulderX = player.shoulder.x; \n` +
+                        `const shoulderY = player.shoulder.y; \n` +
+                        `// Mouse koordinatlarÄ± global olarak kullanÄ±labilir, ancak fonksiyon parametrelerine dahil edilmeli\n` +
+                        `const targetX = player.isPlayer ? mouseX : opponent.head.x;\n` + 
+                        `const targetY = player.isPlayer ? mouseY : opponent.head.y;\n` + 
+                        `const angleToTarget = Math.atan2(targetY - shoulderY, targetX - shoulderX);\n` +
+                        `const armLength = player.limbLength * 1.5;\n` + 
+                        `const handRX = shoulderX + Math.cos(angleToTarget + Math.PI / 12) * armLength; // SaÄŸ el konumu\n` + 
+                        `const handRY = shoulderY + Math.sin(angleToTarget + Math.PI / 12) * armLength;\n` +
+                        
+                        `// --- Ana SaldÄ±rÄ± MantÄ±ÄŸÄ± (Hasar ve Ä°tme) ---\n` +
+                        `${correctedLogic}\n`;
+                    
+                    // mouseX ve mouseY parametrelerini ekledik
+                    const newFunc = new Function('player', 'opponent', 'ctx', 'canvas', 'mouseX', 'mouseY', fullCode);
+                    dynamicAttackFunction = newFunc;
+                    
+                    // YENÄ°: SaldÄ±rÄ± UI'Ä±nÄ± gÃ¼ncelle (X ile kaldÄ±rma dahil)
+                    codeDisplayElement.innerHTML = `
+                        <div class="accessory-item">
+                            <span style="font-weight: bold; color: #d97706;">AKTÄ°F SALDIRI:</span>
+                            <span>${attackDescription}</span>
+                            <span class="remove-accessory" onclick="resetAttack()">âŒ</span>
+                        </div>
+                        <div style="font-size: 0.8rem; color: #6b7280; margin-top: 5px;">(Hasar Sabit: ${FIXED_DAMAGE})</div>
+                    `;
+                    
+                    addMessage('Sistem', `Yeni saldÄ±rÄ± kodu baÅŸarÄ±yla yÃ¼klendi: ${attackDescription} (Hasar sabitlendi: ${FIXED_DAMAGE})`, '#d97706');
+
+                } catch (e) {
+                         // Hata ayÄ±klama Ã§Ä±ktÄ±larÄ±
+                       const FIXED_DAMAGE = 10; // Debug iÃ§in sabit deÄŸer
+                       codeDisplayElement.innerHTML = `
+                           <strong>KOD HATA Ä°Ã‡ERÄ°YOR (SaldÄ±rÄ± MantÄ±ÄŸÄ±):</strong><br>
+                           Hata: ${e.message}<br>
+                           <br>
+                           <span class="debug-label">1. Ã‡izim Kodu (Aksesuar olarak eklendi/edilemedi):</span>
+                           <pre class="debug-code-section">${drawCode || 'BOÅž'}</pre>
+                           <span class="debug-label" style="color: #f87171;">2. MantÄ±k Kodu (Hata Veren):</span>
+                           <pre class="debug-code-section" style="color: #FFF; background-color: #b91c1c;">${correctedLogic}</pre>
+                           <span class="debug-label" style="color: #f59e0b;">3. Mermi DavranÄ±ÅŸ Kodu:</span>
+                           <pre class="debug-code-section">${behaviorCode || 'BOÅž'}</pre>
+                       `;
+                       addMessage('Sistem', `AI tarafÄ±ndan Ã¼retilen saldÄ±rÄ± kodu hatalÄ±. Hata: ${e.message}`, '#b91c1c');
+                       // Hata durumunda varsayÄ±lana geri dÃ¶nÃ¼lÃ¼r ve varsa ekipman kaldÄ±rÄ±lÄ±r
+                       currentAccessories = currentAccessories.filter(acc => !acc.isAttackEquipment);
+                       renderAccessoryList();
+                       dynamicAttackFunction = defaultAttack; 
+                }
+
+            } else {
+                // Bilinmeyen JSON yanÄ±tÄ±
+                console.error("Unknown JSON structure returned by API:", responseText);
+                codeDisplayElement.innerHTML = 'Hata: API\'den bilinmeyen bir yapÄ± dÃ¶ndÃ¼rÃ¼ldÃ¼.';
+                addMessage('Sistem', 'API yapÄ±sal hata: Bilinmeyen yanÄ±t formatÄ±.', '#b91c1c');
+            }
+        } else {
+            codeDisplayElement.textContent = 'Hata: API cevap vermedi.';
+            addMessage('Sistem', 'Kod oluÅŸturma API\'den yanÄ±t alÄ±namadÄ±.', '#b91c1c');
+        }
+    }
+
+    // --- IDEA RENDERING LOGIC (YENÄ°) ---
+    // const attackPromptInput = document.getElementById('attack-prompt-input'); // Redundant const removed
+    // const accessoryPromptInput = document.getElementById('accessory-prompt-input'); // Redundant const removed
+
+    function renderIdeas(ideas, listElementId, targetInput) {
+        const listElement = document.getElementById(listElementId);
+        listElement.innerHTML = ''; // Temizle
+        
+        if (!ideas || ideas.length === 0) {
+            listElement.innerHTML = '<span class="text-gray-500">Fikirler bulunamadÄ±.</span>';
+            return;
+        }
+
+        ideas.forEach(idea => {
+            const tag = document.createElement('span');
+            tag.className = 'idea-tag';
+            tag.textContent = idea;
+            tag.title = 'TÄ±kla ve bu fikri kullan';
+            
+            tag.onclick = () => {
+                targetInput.value = idea;
+                targetInput.focus();
+            };
+            listElement.appendChild(tag);
+        });
+    }
+    
+    // --- IDEA FETCHING FUNCTION (YENÄ°) ---
+    async function fetchCreativeIdeas() {
+        const attackIdeasList = document.getElementById('attack-ideas-list');
+        const accessoryIdeasList = document.getElementById('accessory-ideas-list');
+
+        // YÃ¼kleme durumunu gÃ¶ster
+        attackIdeasList.innerHTML = '<span class="text-gray-500">Fikirler yÃ¼kleniyor...</span>';
+        accessoryIdeasList.innerHTML = '<span class="text-gray-500">Fikirler yÃ¼kleniyor...</span>';
+
+        let ideas = null;
+        try {
+            const result = await requestStructuredJson(apiUrl, buildIdeasPayload());
+            ideas = result.data;
+        } catch (error) {
+            console.error("Fikir yÃ¼kleme hatasÄ±:", error);
+        }
+
+        if (ideas && ideas.attackIdeas && ideas.accessoryIdeas) {
+            renderIdeas(ideas.attackIdeas, 'attack-ideas-list', attackPromptInput);
+            renderIdeas(ideas.accessoryIdeas, 'accessory-ideas-list', accessoryPromptInput);
+        } else {
+            renderIdeas(DEFAULT_ATTACK_IDEAS, 'attack-ideas-list', attackPromptInput);
+            renderIdeas(DEFAULT_ACCESSORY_IDEAS, 'accessory-ideas-list', accessoryPromptInput);
+        }
+    }
+
+
+    // --- LLM DYNAMIC ATTACK CODE GENERATION ---
+    // const attackPromptInput = document.getElementById('attack-prompt-input'); // Redundant const removed
+    // const generateCodeAttackButton = document.getElementById('generate-attack-code'); // Zaten yukarÄ±da tanÄ±mlÄ±
+    // const codeDisplayAttack = document.getElementById('code-display-attack'); // Redundant const removed
+
+    generateCodeAttackButton.addEventListener('click', () => {
+        generateCode(attackPromptInput, codeDisplayAttack, generateCodeAttackButton, 'attack', buildAttackSystemPrompt(), 'SaldÄ±rÄ± kodu baÅŸarÄ±yla oluÅŸturuldu ve yÃ¼klendi! Sol tÄ±k ile deneyin.');
+    });
+
+
+    // --- LLM DYNAMIC ACCESSORY CODE GENERATION ---
+    // const accessoryPromptInput = document.getElementById('accessory-prompt-input'); // Redundant const removed
+    // const generateCodeAccessoryButton = document.getElementById('generate-accessory-code'); // Zaten yukarÄ±da tanÄ±mlÄ±
+    // const codeDisplayAccessory = document.getElementById('code-display-accessory'); // Redundant const removed
+
+    generateCodeAccessoryButton.addEventListener('click', () => {
+        generateCode(accessoryPromptInput, codeDisplayAccessory, generateCodeAccessoryButton, 'accessory', buildAccessorySystemPrompt(), 'Aksesuar kodu baÅŸarÄ±yla oluÅŸturuldu ve yÃ¼klendi! Karakterinizi kontrol edin.');
+    });
+
+
+    // --- GAME LOOP ---
+    let animationFrameId; // Animasyon Ã§erÃ§evesi ID'sini saklamak iÃ§in
+
+    function gameLoop() {
+        // 1. Clear the canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 2. Draw the ground
+        ctx.fillStyle = '#6b7280';
+        ctx.fillRect(0, FLOOR_Y, canvas.width, canvas.height - FLOOR_Y);
+        
+        if (isGamePaused) {
+            // DuraklatÄ±lmÄ±ÅŸken sadece Ã§izim yap ve dÃ¶ngÃ¼yÃ¼ yeniden isteme
+            player.draw(); 
+            computer.draw();
+            drawHealthBars();
+            
+            // YENÄ°: Pause yazÄ±sÄ±nÄ± Ã§iz
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = 'white';
+            ctx.font = '40px Inter';
+            ctx.textAlign = 'center';
+            ctx.fillText('DURAKLATILDI', canvas.width / 2, canvas.height / 2);
+            
+            animationFrameId = requestAnimationFrame(gameLoop); // Ã‡izimi gÃ¼ncellemeye devam et
+            return;
+        }
+
+        // 3. Handle Player Input 
+        if (document.activeElement.id !== 'chat-input' && document.activeElement.id !== 'attack-prompt-input' && document.activeElement.id !== 'accessory-prompt-input') {
+            if (keys['A']) player.move('left');
+            if (keys['D']) player.move('right');
+            if (keys['W']) player.move('jump');
+        }
+
+        // 4. Update AI 
+        updateComputerAI(); // YENÄ°: AI davranÄ±ÅŸÄ±nÄ± buraya taÅŸÄ±dÄ±k
+        
+        // 4.5. Update Projectiles and check collision (YENÄ°)
+        projectiles = projectiles.filter(p => p.isAlive); // Ã–lÃ¼ mermileri filtrele
+        projectiles.forEach(p => {
+            p.update();
+            
+            // Ã‡arpÄ±ÅŸma kontrolÃ¼ (Basit daire Ã§arpÄ±ÅŸmasÄ±) - Hedef Computer
+            const dx = p.x - computer.x;
+            const dy = p.y - computer.head.y; // Hedefi kafanÄ±n merkezine al
+            const distanceSq = dx * dx + dy * dy;
+            const collisionDistSq = (p.size + computer.headRadius) * (p.size + computer.headRadius);
+
+            if (p.isAlive && distanceSq < collisionDistSq && computer.isAlive) {
+                computer.takeDamage(p.damage);
+                computer.vx += (p.vx > 0 ? 1 : -1) * 5; // Hafif geri itme
+                p.isAlive = false; // Mermiyi yok et
+                
+                // VuruÅŸta partikÃ¼l efekti
+                spawnParticleEffect(p.x, p.y, 15, p.color, 6, 10, 0.4);
+            }
+        });
+
+        // 4.6 Update and Draw Particles (YENÄ°)
+        particles = particles.filter(p => p.isAlive);
+        particles.forEach(p => {
+            p.update();
+            p.draw();
+        });
+
+
+        // 5. Handle Collision
+        handleStickmanCollision(player, computer);
+
+        // 6. Update and Draw Stickmen
+        player.update();
+        computer.update();
+
+        player.draw();
+        computer.draw();
+
+        // YENÄ°: Mermileri Ã§iz
+        projectiles.forEach(p => p.draw());
+
+        // 7. Draw UI (Health Bars)
+        drawHealthBars();
+        
+        // 8. Check for game end
+        if (!player.isAlive || !computer.isAlive) {
+             isGamePaused = true; // Oyunu bitir ve duraklat
+             pausePlayButton.textContent = 'OYUN BÄ°TTÄ° (Yeniden BaÅŸlat)';
+             // pausePlayButton.style.backgroundColor = '#dc2626'; // CSS gradient ile yapÄ±ldÄ±
+
+             ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+             ctx.fillRect(0, 0, canvas.width, canvas.height);
+             ctx.fillStyle = 'white';
+             ctx.font = '40px Inter';
+             ctx.textAlign = 'center';
+             const winner = player.isAlive ? 'OYUNCU KAZANDI!' : 'BÄ°LGÄ°SAYAR KAZANDI!';
+             ctx.fillText('OYUN BÄ°TTÄ°!', canvas.width / 2, canvas.height / 2 - 30);
+             ctx.fillText(winner, canvas.width / 2, canvas.height / 2 + 20);
+             
+             animationFrameId = requestAnimationFrame(gameLoop); // Son ekranÄ± Ã§izmek iÃ§in devam et
+             return; 
+        }
+
+        // 9. Request next frame
+        animationFrameId = requestAnimationFrame(gameLoop);
+    }
+
+    // --- AI Logic (GeliÅŸtirilmiÅŸ) ---
+    function updateComputerAI() {
+        if (!computer.isAlive) return;
+
+        // Zorluk ayarlarÄ±na gÃ¶re parametreler
+        let targetDistance = 150; // Hedeflenen uzaklÄ±k
+        let attackChance = 0.005; // SaldÄ±rÄ± ÅŸansÄ± (her karede)
+        let specialAttackChance = 0.001;
+        let evasionChance = 0.01; // KaÃ§Ä±nma ÅŸansÄ±
+
+        if (selectedDifficulty === 'easy') {
+            targetDistance = 200;
+            attackChance = 0.003;
+            specialAttackChance = 0.0005;
+        } else if (selectedDifficulty === 'medium') {
+            targetDistance = 150;
+            attackChance = 0.005;
+            specialAttackChance = 0.001;
+        } else if (selectedDifficulty === 'hard') {
+            targetDistance = 100;
+            attackChance = 0.008;
+            specialAttackChance = 0.003;
+        }
+
+        const distanceToPlayer = player.x - computer.x;
+        const absDistance = Math.abs(distanceToPlayer);
+
+        computer.ax = 0; // Hareketi sÄ±fÄ±rla
+
+        // 1. Hareket (Pozisyonu Koru)
+        if (absDistance > targetDistance + 20) {
+            computer.ax = distanceToPlayer > 0 ? 1 : -1; // YaklaÅŸ
+        } else if (absDistance < targetDistance - 20) {
+            computer.ax = distanceToPlayer > 0 ? -1 : 1; // UzaklaÅŸ
+        }
+
+        // 2. KaÃ§Ä±nma (Evasion)
+        if (projectiles.length > 0 && Math.random() < evasionChance) {
+            const nearestProjectile = projectiles.reduce((nearest, p) => {
+                const dist = Math.hypot(p.x - computer.x, p.y - computer.y);
+                if (dist < nearest.dist) {
+                    return { dist, p };
+                }
+                return nearest;
+            }, { dist: Infinity, p: null });
+
+            if (nearestProjectile.dist < 100) {
+                 // EÄŸer mermi Ã§ok yakÄ±nsa zÄ±pla
+                if (computer.onGround) {
+                    computer.move('jump');
+                }
+                // HÄ±zlÄ±ca merminin tersi yÃ¶ne hareket et
+                computer.ax = nearestProjectile.p.x < computer.x ? 1 : -1;
+            }
+        }
+
+
+        // 3. SaldÄ±rÄ± (Attack)
+        const currentTime = performance.now() / 1000; // Saniye
+        const attackReady = (currentTime - aiLastAttackTime) > AI_ATTACK_DELAY_BASE;
+        
+        if (attackReady && absDistance < 350) { // Sadece menzil iÃ§indeyse saldÄ±r
+            if (Math.random() < specialAttackChance) {
+                aiSpecialAttack(computer, player);
+                aiLastAttackTime = currentTime;
+            } else if (Math.random() < attackChance) {
+                aiBasicAttack(computer, player);
+                aiLastAttackTime = currentTime;
+            }
+        }
+    }
+
+
+    // --- Difficulty Selector Logic ---
+    const difficultyButtons = document.querySelectorAll('#difficulty-selector .difficulty-button');
+
+    difficultyButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            // TÃ¼m butonlardan 'selected' sÄ±nÄ±fÄ±nÄ± kaldÄ±r
+            difficultyButtons.forEach(btn => btn.classList.remove('selected'));
+            
+            // TÄ±klanan butona 'selected' sÄ±nÄ±fÄ±nÄ± ekle
+            button.classList.add('selected');
+            
+            selectedDifficulty = button.getAttribute('data-difficulty');
+            addMessage('Sistem', `Zorluk seviyesi **${selectedDifficulty.toUpperCase()}** olarak ayarlandÄ±.`, '#a78bfa');
+
+            // EÄŸer oyun duraklatÄ±lmÄ±ÅŸsa, zorluk deÄŸiÅŸikliÄŸi yapÄ±ldÄ±ktan sonra AI'yÄ± sÄ±fÄ±rla
+            if(isGamePaused) {
+                // UI'Ä± temizle ama oyunu baÅŸlatma
+                resetAttack();
+            } else {
+                // Oyun devam ediyorsa, hemen yeniden baÅŸlat
+                restartGame();
+            }
+        });
+    });
+
+
+    // Start the game loop on window load.
+    window.onload = function () {
+        loadingOverlay.classList.add('hidden'); // BaÅŸlangÄ±Ã§ta gizle
+        // Oyun otomatik baÅŸlamadÄ±ÄŸÄ± iÃ§in sadece bir kez gameLoop Ã§aÄŸrÄ±sÄ± yapÄ±lÄ±r
+        // Bu, pause ekranÄ±nÄ±n Ã§izilmesini saÄŸlar.
+        gameLoop(); 
+        renderAccessoryList(); // BoÅŸ listeyi ilk baÅŸta gÃ¶ster
+        addMessage('Sistem', 'Oyun DuraklatÄ±ldÄ±. BaÅŸlat tuÅŸuna basarak oyuna baÅŸlayÄ±n.', '#888888');
+        fetchCreativeIdeas(); // YaratÄ±cÄ± fikirleri yÃ¼kle
+        
+        // YENÄ°: Fikirleri 12 saniyede bir yenile
+        setInterval(fetchCreativeIdeas, 12000); 
+    }
+

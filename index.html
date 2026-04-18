@@ -1,0 +1,86 @@
+﻿<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stickman Arena</title>
+  <meta
+    name="description"
+    content="Canvas tabanli stickman arena oyunu. Firebase sohbeti ve Vercel function uzerinden AI destekli saldiri/aksesuar uretimi."
+  >
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+  <div class="main-content">
+    <h1 class="text-3xl font-bold text-indigo-400 mb-4">Stickman Arena</h1>
+
+    <div id="difficulty-selector" class="mb-4">
+      <button class="difficulty-button easy selected" data-difficulty="easy">Kolay</button>
+      <button class="difficulty-button medium" data-difficulty="medium">Orta</button>
+      <button class="difficulty-button hard" data-difficulty="hard">Zor</button>
+    </div>
+
+    <div class="ui-buttons-container">
+      <button id="pause-play-button">Oyunu Baslat</button>
+      <button id="restart-button" class="bg-red-600 hover:bg-red-700">Yeniden Baslat (Reset)</button>
+    </div>
+
+    <div style="position: relative;">
+      <canvas id="gameCanvas" width="800" height="450"></canvas>
+      <div
+        id="loading-overlay"
+        class="loading-overlay hidden"
+        style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border-radius: 12px;"
+      >
+        AI Kod Olusturuluyor... (Oyun Duraklatildi)
+      </div>
+    </div>
+
+    <div class="controls">
+      <p><strong>Player 1 Kontrolleri:</strong> A (Sola), D (Saga), W (Zipla)</p>
+      <p><strong>SALDIRI:</strong> Sol Fare Tiklamasi</p>
+    </div>
+
+    <div class="interaction-panel">
+      <div class="attack-container">
+        <div class="attack-header">Dinamik Saldiri Kod Uretimi</div>
+        <textarea id="attack-prompt-input" rows="2" placeholder="Orn: Yesil isin kilici" maxlength="300"></textarea>
+        <button id="generate-attack-code">Saldiri Kodu Olustur ve Yukle</button>
+        <button id="reset-attack-button">Saldiriyi Sifirla (Varsayilana Don)</button>
+        <div id="code-display-attack">Yuklu Kod: Varsayilan geri tepme.</div>
+
+        <div class="mt-4">
+          <div class="font-bold text-gray-400 mb-2 text-sm">Yaratici Saldiri Fikirleri:</div>
+          <div id="attack-ideas-list" class="flex flex-wrap gap-2 text-xs">
+            <span class="text-gray-500">Fikirler yukleniyor...</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="accessory-container">
+        <div class="accessory-header">Dinamik Aksesuar Kod Uretimi (P1)</div>
+        <textarea id="accessory-prompt-input" rows="2" placeholder="Orn: gozluk" maxlength="300"></textarea>
+        <button id="generate-accessory-code">Aksesuar Kodu Olustur ve Yukle</button>
+        <div id="code-display-accessory">Yuklu Aksesuarlar: Yok.</div>
+
+        <div class="mt-4">
+          <div class="font-bold text-gray-400 mb-2 text-sm">Yaratici Aksesuar Fikirleri:</div>
+          <div id="accessory-ideas-list" class="flex flex-wrap gap-2 text-xs">
+            <span class="text-gray-500">Fikirler yukleniyor...</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="chat-container">
+        <div id="chat-output"></div>
+        <div class="chat-input-area">
+          <input type="text" id="chat-input" placeholder="Mesajinizi yazin..." maxlength="100">
+          <button id="send-button">Gonder</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
