@@ -54,7 +54,7 @@ import { requestStructuredJson } from "./ai-client.js";
         console.error("Firebase configuration is missing. Chat functionality is disabled.");
         const chatInput = document.getElementById('chat-input');
         const sendButton = document.getElementById('send-button');
-        chatInput.placeholder = "Sohbet devre dÄ±ÅŸÄ± (Firebase eksik)";
+        chatInput.placeholder = "Chat disabled (Firebase missing)";
         sendButton.disabled = true;
     }
 
@@ -677,7 +677,7 @@ import { requestStructuredJson } from "./ai-client.js";
                 if (accessoriesToRemove.length > 0) {
                     currentAccessories = currentAccessories.filter(acc => !accessoriesToRemove.includes(acc.id));
                     renderAccessoryList();
-                    addMessage('Sistem', `Hata veren ${accessoriesToRemove.length} aksesuar kaldÄ±rÄ±ldÄ±. LÃ¼tfen konsolu kontrol edin.`, '#b91c1c');
+                    addMessage('System', `${accessoriesToRemove.length} broken accessory items were removed. Please check the console.`, '#b91c1c');
                 }
             }
         }
@@ -726,10 +726,10 @@ import { requestStructuredJson } from "./ai-client.js";
         
         // Oyun durumunu baÅŸlat
         isGamePaused = false;
-        pausePlayButton.textContent = 'Oyunu Durdur';
+        pausePlayButton.textContent = 'Pause Game';
         // Buton rengini sadece metin deÄŸiÅŸtirme durumunda ayarlÄ±yoruz, aksi halde CSS gradient kullanacak
         // pausePlayButton.style.backgroundColor = '#059669'; 
-        addMessage('Sistem', `Oyun yeniden baÅŸlatÄ±ldÄ±. Zorluk: ${selectedDifficulty.toUpperCase()}`, '#059669');
+        addMessage('System', `Game restarted. Difficulty: ${selectedDifficulty.toUpperCase()}`, '#059669');
         requestAnimationFrame(gameLoop);
     }
 
@@ -875,7 +875,7 @@ import { requestStructuredJson } from "./ai-client.js";
             chatInput.value = '';
         } catch (e) {
             console.error("Error writing document: ", e);
-            addMessage('Sistem', 'Mesaj gÃ¶nderilemedi (Firestore HatasÄ±).', '#b91c1c');
+            addMessage('System', 'Message could not be sent (Firestore error).', '#b91c1c');
         }
     }
 
@@ -901,11 +901,11 @@ import { requestStructuredJson } from "./ai-client.js";
             });
 
             if (messages.length === 0) {
-                addMessage('Sistem', 'Oyuna hoÅŸ geldiniz! Sohbet kutusunu test edebilirsiniz.', '#888888');
+                addMessage('System', 'Welcome to the arena! You can test the chat box here.', '#888888');
             }
         }, (error) => {
             console.error("Chat Listener Error:", error);
-            addMessage('Sistem', `Sohbet yÃ¼klenirken hata: ${error.message}`, '#b91c1c');
+            addMessage('System', `Error while loading chat: ${error.message}`, '#b91c1c');
         });
     }
 
@@ -916,7 +916,7 @@ import { requestStructuredJson } from "./ai-client.js";
 
     function renderAccessoryList() {
         if (currentAccessories.length === 0) {
-            codeDisplayAccessory.innerHTML = 'YÃ¼klÃ¼ Aksesuarlar: Yok.';
+            codeDisplayAccessory.innerHTML = 'Loaded accessories: none.';
             return;
         }
 
@@ -930,20 +930,20 @@ import { requestStructuredJson } from "./ai-client.js";
             const descSpan = document.createElement('span');
             // Konum bilgisini kÄ±saltarak gÃ¶ster
             const locationMap = {
-                'head': 'Kafa', 
-                'head_top': 'Kafa ÃœstÃ¼ (Åžapka)', 
-                'eyes': 'GÃ¶z (GÃ¶zlÃ¼k)', 
-                'neck': 'Boyun (Kolye)', 
-                'hand': 'El (Silah)', 
-                'wrist': 'Bilek (Saat)', 
-                'torso': 'GÃ¶vde (ZÄ±rh)', 
-                'back': 'SÄ±rt (Ã‡anta)', 
-                'foot': 'Ayak (AyakkabÄ±)'
+                'head': 'Head', 
+                'head_top': 'Top of Head (Hat)', 
+                'eyes': 'Eyes (Glasses)', 
+                'neck': 'Neck (Necklace)', 
+                'hand': 'Hand (Weapon)', 
+                'wrist': 'Wrist (Watch)', 
+                'torso': 'Torso (Armor)', 
+                'back': 'Back (Bag)', 
+                'foot': 'Foot (Shoe)'
             };
             const locationText = locationMap[accessory.location] || accessory.location;
             
             // SaldÄ±rÄ± EkipmanÄ± ise ek bir bilgi ekle
-            const equipmentTag = accessory.isAttackEquipment ? ' [SaldÄ±rÄ± EkipmanÄ±]' : '';
+            const equipmentTag = accessory.isAttackEquipment ? ' [Attack Gear]' : '';
             descSpan.textContent = `[${locationText}] ${accessory.description.split(' (Equipment)')[0]}${equipmentTag}`;
             
             const removeButton = document.createElement('span');
@@ -955,7 +955,7 @@ import { requestStructuredJson } from "./ai-client.js";
                 // Diziden bu ID'ye sahip aksesuarÄ± filtrele
                 currentAccessories = currentAccessories.filter(a => a.id !== accessory.id);
                 renderAccessoryList(); // Listeyi yeniden Ã§iz
-                addMessage('Sistem', `Aksesuar "${accessory.description.split(' (Equipment)')[0]}" kaldÄ±rÄ±ldÄ±.`, '#059669');
+                addMessage('System', `Accessory "${accessory.description.split(' (Equipment)')[0]}" removed.`, '#059669');
             };
 
             itemDiv.appendChild(descSpan);
@@ -973,8 +973,8 @@ import { requestStructuredJson } from "./ai-client.js";
         renderAccessoryList();
         
         // const codeDisplayAttack = document.getElementById('code-display-attack'); // Redundant const removed
-        codeDisplayAttack.textContent = "YÃ¼klÃ¼ Kod: VarsayÄ±lan geri tepme.";
-        addMessage('Sistem', 'SaldÄ±rÄ± mekaniÄŸi varsayÄ±lana sÄ±fÄ±rlandÄ±. SilahÄ±nÄ±z kaldÄ±rÄ±ldÄ±.', '#ef4444');
+        codeDisplayAttack.textContent = "Loaded code: default knockback attack.";
+        addMessage('System', 'Attack mechanic reset to default. Your weapon was removed.', '#ef4444');
     }
 
     // FIX: resetAttack fonksiyonunu inline onclick iÃ§in global hale getir
@@ -992,13 +992,11 @@ import { requestStructuredJson } from "./ai-client.js";
 
         isGamePaused = !isGamePaused;
         if (isGamePaused) {
-            pausePlayButton.textContent = 'Oyunu BaÅŸlat';
-            // pausePlayButton.style.backgroundColor = '#3b82f6'; // CSS gradient'e bÄ±rakÄ±ldÄ±
-            addMessage('Sistem', 'Oyun duraklatÄ±ldÄ±. Kontroller devre dÄ±ÅŸÄ±.', '#3b82f6');
+            pausePlayButton.textContent = 'Start Game';
+            addMessage('System', 'Game paused. Controls are disabled.', '#3b82f6');
         } else {
-            pausePlayButton.textContent = 'Oyunu Durdur';
-            // pausePlayButton.style.backgroundColor = '#059669'; // CSS gradient'e bÄ±rakÄ±ldÄ±
-            addMessage('Sistem', 'Oyun baÅŸlatÄ±ldÄ±. Ä°yi eÄŸlenceler!', '#059669');
+            pausePlayButton.textContent = 'Pause Game';
+            addMessage('System', 'Game started. Have fun!', '#059669');
             // Oyun duraklatÄ±lmÄ±ÅŸken dÃ¶ngÃ¼ durduysa, tekrar baÅŸlat
             requestAnimationFrame(gameLoop); 
         }
@@ -1013,7 +1011,7 @@ import { requestStructuredJson } from "./ai-client.js";
     async function generateCode(promptElement, codeDisplayElement, buttonElement, schemaType, systemPrompt, successMessage) {
         const promptText = promptElement.value.trim();
         if (!promptText) {
-            console.error("LÃ¼tfen bir aÃ§Ä±klama girin.");
+            console.error("Please enter a description.");
             return;
         }
         
@@ -1022,7 +1020,7 @@ import { requestStructuredJson } from "./ai-client.js";
         isGamePaused = true; 
         
         // YENÄ°: YÃ¼kleme mesajÄ±nÄ± gÃ¼ncelle
-        loadingOverlay.textContent = schemaType === 'attack' ? 'SaldÄ±rÄ± OluÅŸturuluyor...' : 'Aksesuar OluÅŸturuluyor...';
+        loadingOverlay.textContent = schemaType === 'attack' ? 'Generating attack...' : 'Generating accessory...';
         loadingOverlay.classList.remove('hidden');
         
         buttonElement.disabled = true; 
@@ -1074,9 +1072,9 @@ import { requestStructuredJson } from "./ai-client.js";
             const result = await requestStructuredJson(apiUrl, payload);
             responseText = result.data;
         } catch (error) {
-            console.error("API Ã§aÄŸrÄ±sÄ± baÅŸarÄ±sÄ±z oldu:", error);
-            codeDisplayElement.innerHTML = `<strong>JSON PARSE HATASI:</strong><br>Hata: ${error.message}`;
-            addMessage('Sistem', `AI JSON hatasÄ±: ${error.message}`, '#b91c1c');
+            console.error("API request failed:", error);
+            codeDisplayElement.innerHTML = `<strong>AI Error:</strong><br>${error.message}`;
+            addMessage('System', `AI error: ${error.message}`, '#b91c1c');
         }
         
         // KOD OLUÅžUMU BÄ°TTÄ°ÄžÄ°NDE OYUN PAUSE KALACAK.
@@ -1129,26 +1127,26 @@ import { requestStructuredJson } from "./ai-client.js";
                              accessoriesAdded++;
 
                         } catch (e) {
-                            codeDisplayElement.innerHTML = `<strong>KOD HATA Ä°Ã‡ERÄ°YOR (Aksesuar #${accessoriesAdded + 1}):</strong><br>Hata: ${e.message}<br>Ham Kod:<pre class="debug-code-section" style="color: #f87171;">${rawCode}</pre>`;
-                            addMessage('Sistem', `AI tarafÄ±ndan Ã¼retilen kod hatalÄ±. Hata: ${e.message}`, '#b91c1c');
+                            codeDisplayElement.innerHTML = `<strong>CODE ERROR (Accessory #${accessoriesAdded + 1}):</strong><br>Error: ${e.message}<br>Raw code:<pre class="debug-code-section" style="color: #f87171;">${rawCode}</pre>`;
+                            addMessage('System', `The AI-generated code is invalid. Error: ${e.message}`, '#b91c1c');
                             return; 
                         }
                     } else {
                         console.error("Accessory object is missing required fields (javascriptCode or targetLocation):", acc);
                         
-                        codeDisplayElement.innerHTML = `<strong>HATA:</strong> AI, gerekli alanlarÄ± (${acc.javascriptCode ? '' : 'javascriptCode,'} ${acc.targetLocation ? '' : 'targetLocation'}) iÃ§ermeyen bir nesne dÃ¶ndÃ¼rdÃ¼. LÃ¼tfen konsolu kontrol edin.`;
-                        addMessage('Sistem', `AI yapÄ±sal hata: ${acc.description || 'TanÄ±msÄ±z aksesuar'} reddedildi.`, '#b91c1c');
+                        codeDisplayElement.innerHTML = `<strong>ERROR:</strong> The AI returned an object missing required fields (${acc.javascriptCode ? '' : 'javascriptCode,'} ${acc.targetLocation ? '' : 'targetLocation'}). Please check the console.`;
+                        addMessage('System', `AI structure error: ${(acc.description || 'Unnamed accessory')} was rejected.`, '#b91c1c');
                     }
                 }
                 
                 if (accessoriesAdded > 0) {
                     renderAccessoryList(); 
-                    addMessage('Sistem', `BaÅŸarÄ±yla ${accessoriesAdded} yeni aksesuar yÃ¼klendi!`, '#059669');
+                    addMessage('System', `Successfully loaded ${accessoriesAdded} new accessory items.`, '#059669');
                 } else {
                     console.error("API returned a structure that resulted in 0 valid accessories (Accessories Array):", responseText);
 
-                    codeDisplayElement.innerHTML = `<strong>Hata:</strong> API'dan geÃ§erli aksesuar kodu gelmedi. (0 Ã¶ÄŸe yÃ¼klendi)<br>LÃ¼tfen konsolu kontrol edin.`;
-                    addMessage('Sistem', 'API geÃ§erli aksesuar kodu iÃ§ermeyen yanÄ±t dÃ¶ndÃ¼rdÃ¼.', '#b91c1c');
+                    codeDisplayElement.innerHTML = `<strong>Error:</strong> The API did not return valid accessory code. (0 items loaded)<br>Please check the console.`;
+                    addMessage('System', 'The API returned a response without valid accessory code.', '#b91c1c');
                 }
             } else if (schemaType === 'attack') {
                 // --- SaldÄ±rÄ± Ä°ÅŸleme MantÄ±ÄŸÄ± (JSON OBJECT) ---
@@ -1156,7 +1154,7 @@ import { requestStructuredJson } from "./ai-client.js";
                 let drawCode = attackData.requiredEquipmentDrawCode || '';
                 let behaviorCode = attackData.projectileBehaviorCode || ''; // YENÄ°: DavranÄ±ÅŸ kodu
                 let attackLogic = attackData.javascriptCode || '';
-                const attackDescription = attackData.description || 'TanÄ±msÄ±z SaldÄ±rÄ±';
+                const attackDescription = attackData.description || 'Unnamed Attack';
                 
                 // Kodu temizle
                 attackLogic = attackLogic.trim().replace(/^```(js|javascript)?\s*/i, '').replace(/\s*```$/, '');
@@ -1187,10 +1185,10 @@ import { requestStructuredJson } from "./ai-client.js";
                         };
                         currentAccessories.push(newEquipment);
                         renderAccessoryList(); // Aksesuar listesini gÃ¼ncelle
-                        addMessage('Sistem', `SaldÄ±rÄ± EkipmanÄ± (${attackDescription}) yÃ¼klendi.`, '#d97706');
+                        addMessage('System', `Attack gear loaded (${attackDescription}).`, '#d97706');
                     } catch (e) {
                         // EÄŸer Ã§izim kodu hatalÄ±ysa, bu kÄ±smÄ± logla ama mantÄ±ÄŸÄ± Ã§alÄ±ÅŸtÄ±rmaya devam et
-                        addMessage('Sistem', `Hata: Ekipman Ã§izim kodu hatalÄ±. SilahsÄ±z devam ediliyor. Hata: ${e.message}`, '#b91c1c');
+                        addMessage('System', `Error: equipment drawing code is invalid. Continuing without weapon art. Error: ${e.message}`, '#b91c1c');
                         drawCode = ''; // HatalÄ± Ã§izim kodunu temizle
                         console.error("Equipment Draw Code Error (Hata veren Ã§izim kodu):", fixedDrawCode, e);
                     }
@@ -1244,30 +1242,30 @@ import { requestStructuredJson } from "./ai-client.js";
                     // YENÄ°: SaldÄ±rÄ± UI'Ä±nÄ± gÃ¼ncelle (X ile kaldÄ±rma dahil)
                     codeDisplayElement.innerHTML = `
                         <div class="accessory-item">
-                            <span style="font-weight: bold; color: #d97706;">AKTÄ°F SALDIRI:</span>
+                            <span style="font-weight: bold; color: #d97706;">ACTIVE ATTACK:</span>
                             <span>${attackDescription}</span>
                             <span class="remove-accessory" onclick="resetAttack()">âŒ</span>
                         </div>
-                        <div style="font-size: 0.8rem; color: #6b7280; margin-top: 5px;">(Hasar Sabit: ${FIXED_DAMAGE})</div>
+                        <div style="font-size: 0.8rem; color: #6b7280; margin-top: 5px;">(Fixed damage: ${FIXED_DAMAGE})</div>
                     `;
                     
-                    addMessage('Sistem', `Yeni saldÄ±rÄ± kodu baÅŸarÄ±yla yÃ¼klendi: ${attackDescription} (Hasar sabitlendi: ${FIXED_DAMAGE})`, '#d97706');
+                    addMessage('System', `New attack code loaded successfully: ${attackDescription} (Fixed damage: ${FIXED_DAMAGE})`, '#d97706');
 
                 } catch (e) {
                          // Hata ayÄ±klama Ã§Ä±ktÄ±larÄ±
                        const FIXED_DAMAGE = 10; // Debug iÃ§in sabit deÄŸer
                        codeDisplayElement.innerHTML = `
-                           <strong>KOD HATA Ä°Ã‡ERÄ°YOR (SaldÄ±rÄ± MantÄ±ÄŸÄ±):</strong><br>
-                           Hata: ${e.message}<br>
+                           <strong>CODE ERROR (Attack Logic):</strong><br>
+                           Error: ${e.message}<br>
                            <br>
-                           <span class="debug-label">1. Ã‡izim Kodu (Aksesuar olarak eklendi/edilemedi):</span>
-                           <pre class="debug-code-section">${drawCode || 'BOÅž'}</pre>
-                           <span class="debug-label" style="color: #f87171;">2. MantÄ±k Kodu (Hata Veren):</span>
+                           <span class="debug-label">1. Draw Code (added as accessory or failed):</span>
+                           <pre class="debug-code-section">${drawCode || 'EMPTY'}</pre>
+                           <span class="debug-label" style="color: #f87171;">2. Logic Code (failing section):</span>
                            <pre class="debug-code-section" style="color: #FFF; background-color: #b91c1c;">${correctedLogic}</pre>
-                           <span class="debug-label" style="color: #f59e0b;">3. Mermi DavranÄ±ÅŸ Kodu:</span>
-                           <pre class="debug-code-section">${behaviorCode || 'BOÅž'}</pre>
+                           <span class="debug-label" style="color: #f59e0b;">3. Projectile Behavior Code:</span>
+                           <pre class="debug-code-section">${behaviorCode || 'EMPTY'}</pre>
                        `;
-                       addMessage('Sistem', `AI tarafÄ±ndan Ã¼retilen saldÄ±rÄ± kodu hatalÄ±. Hata: ${e.message}`, '#b91c1c');
+                       addMessage('System', `The AI-generated attack code is invalid. Error: ${e.message}`, '#b91c1c');
                        // Hata durumunda varsayÄ±lana geri dÃ¶nÃ¼lÃ¼r ve varsa ekipman kaldÄ±rÄ±lÄ±r
                        currentAccessories = currentAccessories.filter(acc => !acc.isAttackEquipment);
                        renderAccessoryList();
@@ -1277,12 +1275,12 @@ import { requestStructuredJson } from "./ai-client.js";
             } else {
                 // Bilinmeyen JSON yanÄ±tÄ±
                 console.error("Unknown JSON structure returned by API:", responseText);
-                codeDisplayElement.innerHTML = 'Hata: API\'den bilinmeyen bir yapÄ± dÃ¶ndÃ¼rÃ¼ldÃ¼.';
-                addMessage('Sistem', 'API yapÄ±sal hata: Bilinmeyen yanÄ±t formatÄ±.', '#b91c1c');
+                codeDisplayElement.innerHTML = 'Error: the API returned an unknown structure.';
+                addMessage('System', 'API structure error: unknown response format.', '#b91c1c');
             }
         } else {
-            codeDisplayElement.textContent = 'Hata: API cevap vermedi.';
-            addMessage('Sistem', 'Kod oluÅŸturma API\'den yanÄ±t alÄ±namadÄ±.', '#b91c1c');
+            codeDisplayElement.textContent = 'Error: no response from the API.';
+            addMessage('System', 'No response was received from the code generation API.', '#b91c1c');
         }
     }
 
@@ -1295,7 +1293,7 @@ import { requestStructuredJson } from "./ai-client.js";
         listElement.innerHTML = ''; // Temizle
         
         if (!ideas || ideas.length === 0) {
-            listElement.innerHTML = '<span class="text-gray-500">Fikirler bulunamadÄ±.</span>';
+            listElement.innerHTML = '<span class="text-gray-500">No ideas found.</span>';
             return;
         }
 
@@ -1303,7 +1301,7 @@ import { requestStructuredJson } from "./ai-client.js";
             const tag = document.createElement('span');
             tag.className = 'idea-tag';
             tag.textContent = idea;
-            tag.title = 'TÄ±kla ve bu fikri kullan';
+            tag.title = 'Click to use this idea';
             
             tag.onclick = () => {
                 targetInput.value = idea;
@@ -1319,15 +1317,15 @@ import { requestStructuredJson } from "./ai-client.js";
         const accessoryIdeasList = document.getElementById('accessory-ideas-list');
 
         // YÃ¼kleme durumunu gÃ¶ster
-        attackIdeasList.innerHTML = '<span class="text-gray-500">Fikirler yÃ¼kleniyor...</span>';
-        accessoryIdeasList.innerHTML = '<span class="text-gray-500">Fikirler yÃ¼kleniyor...</span>';
+        attackIdeasList.innerHTML = '<span class="text-gray-500">Loading ideas...</span>';
+        accessoryIdeasList.innerHTML = '<span class="text-gray-500">Loading ideas...</span>';
 
         let ideas = null;
         try {
             const result = await requestStructuredJson(apiUrl, buildIdeasPayload());
             ideas = result.data;
         } catch (error) {
-            console.error("Fikir yÃ¼kleme hatasÄ±:", error);
+            console.error("Idea loading error:", error);
         }
 
         if (ideas && ideas.attackIdeas && ideas.accessoryIdeas) {
@@ -1346,7 +1344,7 @@ import { requestStructuredJson } from "./ai-client.js";
     // const codeDisplayAttack = document.getElementById('code-display-attack'); // Redundant const removed
 
     generateCodeAttackButton.addEventListener('click', () => {
-        generateCode(attackPromptInput, codeDisplayAttack, generateCodeAttackButton, 'attack', buildAttackSystemPrompt(), 'SaldÄ±rÄ± kodu baÅŸarÄ±yla oluÅŸturuldu ve yÃ¼klendi! Sol tÄ±k ile deneyin.');
+        generateCode(attackPromptInput, codeDisplayAttack, generateCodeAttackButton, 'attack', buildAttackSystemPrompt(), 'Attack code generated and loaded successfully. Try it with left click.');
     });
 
 
@@ -1356,7 +1354,7 @@ import { requestStructuredJson } from "./ai-client.js";
     // const codeDisplayAccessory = document.getElementById('code-display-accessory'); // Redundant const removed
 
     generateCodeAccessoryButton.addEventListener('click', () => {
-        generateCode(accessoryPromptInput, codeDisplayAccessory, generateCodeAccessoryButton, 'accessory', buildAccessorySystemPrompt(), 'Aksesuar kodu baÅŸarÄ±yla oluÅŸturuldu ve yÃ¼klendi! Karakterinizi kontrol edin.');
+        generateCode(accessoryPromptInput, codeDisplayAccessory, generateCodeAccessoryButton, 'accessory', buildAccessorySystemPrompt(), 'Accessory code generated and loaded successfully. Check your character.');
     });
 
 
@@ -1383,7 +1381,7 @@ import { requestStructuredJson } from "./ai-client.js";
             ctx.fillStyle = 'white';
             ctx.font = '40px Inter';
             ctx.textAlign = 'center';
-            ctx.fillText('DURAKLATILDI', canvas.width / 2, canvas.height / 2);
+            ctx.fillText('PAUSED', canvas.width / 2, canvas.height / 2);
             
             animationFrameId = requestAnimationFrame(gameLoop); // Ã‡izimi gÃ¼ncellemeye devam et
             return;
@@ -1447,7 +1445,7 @@ import { requestStructuredJson } from "./ai-client.js";
         // 8. Check for game end
         if (!player.isAlive || !computer.isAlive) {
              isGamePaused = true; // Oyunu bitir ve duraklat
-             pausePlayButton.textContent = 'OYUN BÄ°TTÄ° (Yeniden BaÅŸlat)';
+             pausePlayButton.textContent = 'GAME OVER (Restart)';
              // pausePlayButton.style.backgroundColor = '#dc2626'; // CSS gradient ile yapÄ±ldÄ±
 
              ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
@@ -1455,8 +1453,8 @@ import { requestStructuredJson } from "./ai-client.js";
              ctx.fillStyle = 'white';
              ctx.font = '40px Inter';
              ctx.textAlign = 'center';
-             const winner = player.isAlive ? 'OYUNCU KAZANDI!' : 'BÄ°LGÄ°SAYAR KAZANDI!';
-             ctx.fillText('OYUN BÄ°TTÄ°!', canvas.width / 2, canvas.height / 2 - 30);
+             const winner = player.isAlive ? 'PLAYER WINS!' : 'COMPUTER WINS!';
+             ctx.fillText('GAME OVER!', canvas.width / 2, canvas.height / 2 - 30);
              ctx.fillText(winner, canvas.width / 2, canvas.height / 2 + 20);
              
              animationFrameId = requestAnimationFrame(gameLoop); // Son ekranÄ± Ã§izmek iÃ§in devam et
@@ -1552,7 +1550,7 @@ import { requestStructuredJson } from "./ai-client.js";
             button.classList.add('selected');
             
             selectedDifficulty = button.getAttribute('data-difficulty');
-            addMessage('Sistem', `Zorluk seviyesi **${selectedDifficulty.toUpperCase()}** olarak ayarlandÄ±.`, '#a78bfa');
+            addMessage('System', `Difficulty set to **${selectedDifficulty.toUpperCase()}**.`, '#a78bfa');
 
             // EÄŸer oyun duraklatÄ±lmÄ±ÅŸsa, zorluk deÄŸiÅŸikliÄŸi yapÄ±ldÄ±ktan sonra AI'yÄ± sÄ±fÄ±rla
             if(isGamePaused) {
@@ -1573,7 +1571,7 @@ import { requestStructuredJson } from "./ai-client.js";
         // Bu, pause ekranÄ±nÄ±n Ã§izilmesini saÄŸlar.
         gameLoop(); 
         renderAccessoryList(); // BoÅŸ listeyi ilk baÅŸta gÃ¶ster
-        addMessage('Sistem', 'Oyun DuraklatÄ±ldÄ±. BaÅŸlat tuÅŸuna basarak oyuna baÅŸlayÄ±n.', '#888888');
+        addMessage('System', 'Game is paused. Press Start Game to begin.', '#888888');
         fetchCreativeIdeas(); // YaratÄ±cÄ± fikirleri yÃ¼kle
         
         // YENÄ°: Fikirleri 12 saniyede bir yenile

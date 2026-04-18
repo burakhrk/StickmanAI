@@ -1,45 +1,45 @@
 export const DEFAULT_ATTACK_IDEAS = [
-  "Ateş Topu fırlat",
-  "Zıplayan Elektrik Topu",
-  "Lazer Tüfek Atışı",
+  "Fireball shot",
+  "Bouncing lightning orb",
+  "Laser rifle blast",
 ];
 
 export const DEFAULT_ACCESSORY_IDEAS = [
-  "Silahlı Robot Kol (El)",
-  "Plazma Tüfeği (El)",
-  "Keskin Nişancı Gözlüğü (Göz)",
+  "Robot arm weapon",
+  "Plasma rifle",
+  "Sniper goggles",
 ];
 
 export const GAME_CONTEXT_DETAILS = `
-OYUN MOTORU DETAYLARI VE KULLANILABİLİR DEĞİŞKENLER:
+GAME ENGINE DETAILS AND AVAILABLE VARIABLES:
 
-1. KARAKTER NESNESİ ('player' ve 'opponent'):
-    - KRİTİK FİZİK DEĞİŞKENLERİ: player.x, player.y (Gövde Merkezi), player.vx, player.vy (Hızlar).
-    - YASAK: ASLA 'velX', 'velY', 'vel' gibi isimlendirmeler kullanmayın. SADECE player.vx ve player.vy geçerlidir.
-    - DİĞER: player.onGround, player.facing, player.takeDamage(amount), player.headRadius.
+1. CHARACTER OBJECTS ('player' and 'opponent'):
+    - CRITICAL PHYSICS VARIABLES: player.x, player.y, player.vx, player.vy.
+    - FORBIDDEN: Do not use names like 'velX', 'velY', or 'vel'. Only player.vx and player.vy are valid.
+    - OTHER: player.onGround, player.facing, player.takeDamage(amount), player.headRadius.
 
-2. GLOBAL SABİTLER VE ORTAMLAR:
+2. GLOBAL CONSTANTS AND CONTEXT:
     - ATTACK_DAMAGE: 10
     - FLOOR_Y: 400, GRAVITY: 0.5
     - Canvas/Mouse: ctx, canvas, mouseX, mouseY
-    - Mermi Fırlatma: spawnProjectile(startX, startY, vx, vy, ATTACK_DAMAGE, size, color, drawCode, behaviorCode)
-    - Partikül Efekti: spawnParticleEffect(x, y, count, color, size, maxSpeed, lifespan)
+    - Projectile spawning: spawnProjectile(startX, startY, vx, vy, ATTACK_DAMAGE, size, color, drawCode, behaviorCode)
+    - Particle effect: spawnParticleEffect(x, y, count, color, size, maxSpeed, lifespan)
 
-3. SALDIRI KURALLARI:
-    - Boyut ve hızları player.headRadius üzerinden oransal hesaplayın.
-    - PROJECTILE_BEHAVIOR_CODE sabitini kullanın.
-    - Mermi çıkışı için handRX ve handRY kullanın.
-    - Hız için yalnızca vx ve vy kullanın.
+3. ATTACK RULES:
+    - Scale projectile size and speed proportionally using player.headRadius.
+    - Use the PROJECTILE_BEHAVIOR_CODE constant.
+    - Use handRX and handRY as the projectile origin.
+    - Use only vx and vy for speed values.
 
-4. MERMİ DAVRANIŞ KODU:
-    - Bu kod yalnızca 'p', 'player', 'opponent', 'GRAVITY' ve 'FLOOR_Y' değişkenlerine erişir.
-    - Mermi hareketi için p.x += p.vx; ve p.y += p.vy; kullanın.
+4. PROJECTILE BEHAVIOR CODE:
+    - This code can only access 'p', 'player', 'opponent', 'GRAVITY', and 'FLOOR_Y'.
+    - Projectile movement must use p.x += p.vx; and p.y += p.vy;.
 
-5. GÖRSEL KISITLAMALAR:
-    - Aksesuar çizim kodunda tüm boyutları ve konumları scale ile çarpın.
-    - Silah gerekiyorsa requiredEquipmentDrawCode alanını doldurun.
-    - scale değişkenini yeniden tanımlamayın.
-    - Gölgelendirme, parlama ve zengin renkler kullanın.
+5. VISUAL CONSTRAINTS:
+    - Multiply all accessory sizes and offsets by scale.
+    - If a weapon is required, fill in requiredEquipmentDrawCode.
+    - Do not redeclare the scale variable.
+    - Use shadows, glow, and rich colors where appropriate.
 `;
 
 export const attackSchema = {
@@ -116,7 +116,7 @@ export function buildAttackSystemPrompt() {
         - JSON output must be perfectly structured.
         - If the user requests a weapon, include its drawing code in 'requiredEquipmentDrawCode'.
 
-        TASK: Return a single JSON OBJECT strictly adhering to the attackSchema. Use Turkish comments for any complex parts.
+        TASK: Return a single JSON OBJECT strictly adhering to the attackSchema. Use English comments for any complex parts.
         `;
 }
 
@@ -131,7 +131,7 @@ export function buildAccessorySystemPrompt() {
         - Target Locations: 'head', 'head_top', 'eyes', 'neck', 'hand', 'wrist', 'torso', 'back', 'foot'.
         - Use shadows, highlights, and rich colors where appropriate.
 
-        TASK: Return a JSON ARRAY strictly adhering to the accessorySchema. Use Turkish comments for any complex parts.
+        TASK: Return a JSON ARRAY strictly adhering to the accessorySchema. Use English comments for any complex parts.
         `;
 }
 
@@ -144,7 +144,7 @@ export function buildIdeasPayload() {
     }],
     systemInstruction: {
       parts: [{
-        text: "You are a creative director for a stickman game. Provide a JSON object with creative ideas. Ideas must be extremely short, concise, and directly translatable into simple game code. Use simple Turkish phrases.",
+        text: "You are a creative director for a stickman game. Provide a JSON object with creative ideas. Ideas must be extremely short, concise, and directly translatable into simple game code. Use simple English phrases.",
       }],
     },
     generationConfig: {

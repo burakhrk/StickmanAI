@@ -23,12 +23,30 @@ function toJsonSchema(schema) {
   }
 
   if (normalized.properties) {
+    const required = Array.isArray(normalized.required)
+      ? new Set(normalized.required)
+      : new Set();
+
     normalized.properties = Object.fromEntries(
       Object.entries(normalized.properties).map(([key, value]) => [
         key,
-        toJsonSchema(value),
+        (() => {
+          const child = toJsonSchema(value);
+
+          if (!required.has(key)) {
+            if (typeof child?.type === "string") {
+              child.type = [child.type, "null"];
+            } else if (Array.isArray(child?.type) && !child.type.includes("null")) {
+              child.type = [...child.type, "null"];
+            }
+          }
+
+          return child;
+        })(),
       ]),
     );
+
+    normalized.required = Object.keys(normalized.properties);
 
     if (normalized.additionalProperties === undefined) {
       normalized.additionalProperties = false;

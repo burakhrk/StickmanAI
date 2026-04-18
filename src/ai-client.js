@@ -21,11 +21,23 @@ export async function requestStructuredJson(apiUrl, payload, { retries = 3 } = {
         body: JSON.stringify(payload),
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      const rawText = await response.text();
+      let result;
+
+      try {
+        result = JSON.parse(rawText);
+      } catch {
+        result = { error: { message: rawText } };
       }
 
-      const result = await response.json();
+      if (!response.ok) {
+        const errorMessage =
+          result?.error?.message ||
+          result?.message ||
+          `HTTP error! status: ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
       const jsonString = extractJsonString(result);
 
       return {
