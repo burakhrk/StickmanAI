@@ -12,9 +12,6 @@
     "build": "vite build",
     "preview": "vite preview"
   },
-  "dependencies": {
-    "firebase": "^11.6.1"
-  },
   "devDependencies": {
     "vite": "^7.0.0"
   }

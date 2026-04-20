@@ -6,78 +6,102 @@
   <title>Stickman Arena</title>
   <meta
     name="description"
-    content="Canvas-based stickman arena game with Firebase chat and AI-powered attack and accessory generation."
+    content="Canvas-based stickman arena game with AI-powered attack and accessory generation plus a built-in debug log."
   >
-  <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body>
-  <div class="main-content">
-    <h1 class="text-3xl font-bold text-indigo-400 mb-4">Stickman Arena</h1>
-
-    <div id="difficulty-selector" class="mb-4">
-      <button class="difficulty-button easy selected" data-difficulty="easy">Easy</button>
-      <button class="difficulty-button medium" data-difficulty="medium">Medium</button>
-      <button class="difficulty-button hard" data-difficulty="hard">Hard</button>
-    </div>
-
-    <div class="ui-buttons-container">
-      <button id="pause-play-button">Start Game</button>
-      <button id="restart-button" class="bg-red-600 hover:bg-red-700">Restart Game</button>
-    </div>
-
-    <div style="position: relative;">
-      <canvas id="gameCanvas" width="800" height="450"></canvas>
-      <div
-        id="loading-overlay"
-        class="loading-overlay hidden"
-        style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border-radius: 12px;"
-      >
-        Generating AI code... (Game paused)
+  <div class="page-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">AI Sandbox Arena</p>
+        <h1>Stickman Arena</h1>
       </div>
-    </div>
+      <p class="topbar-copy">Build ridiculous attacks, test accessories, and watch live debug feedback without leaving the arena view.</p>
+    </header>
 
-    <div class="controls">
-      <p><strong>Player 1 Controls:</strong> A (Left), D (Right), W (Jump)</p>
-      <p><strong>ATTACK:</strong> Left Mouse Click</p>
-    </div>
-
-    <div class="interaction-panel">
-      <div class="attack-container">
-        <div class="attack-header">Dynamic Attack Generation</div>
-        <textarea id="attack-prompt-input" rows="2" placeholder="Example: green light sword" maxlength="300"></textarea>
-        <button id="generate-attack-code">Generate and Load Attack</button>
-        <button id="reset-attack-button">Reset Attack</button>
-        <div id="code-display-attack">Loaded code: default knockback attack.</div>
-
-        <div class="mt-4">
-          <div class="font-bold text-gray-400 mb-2 text-sm">Creative Attack Ideas:</div>
-          <div id="attack-ideas-list" class="flex flex-wrap gap-2 text-xs">
-            <span class="text-gray-500">Loading ideas...</span>
+    <div class="arena-layout">
+      <aside class="side-column">
+        <section class="panel attack-container">
+          <div class="panel-heading">
+            <p class="panel-kicker">Left Loadout</p>
+            <h2 class="attack-header">Dynamic Attack Generation</h2>
           </div>
-        </div>
-      </div>
+          <textarea id="attack-prompt-input" rows="4" placeholder="Example: green light sword" maxlength="300"></textarea>
+          <button id="generate-attack-code">Generate and Load Attack</button>
+          <button id="reset-attack-button">Reset Attack</button>
+          <div id="code-display-attack">Loaded code: default knockback attack.</div>
 
-      <div class="accessory-container">
-        <div class="accessory-header">Dynamic Accessory Generation (P1)</div>
-        <textarea id="accessory-prompt-input" rows="2" placeholder="Example: sunglasses" maxlength="300"></textarea>
-        <button id="generate-accessory-code">Generate and Load Accessory</button>
-        <div id="code-display-accessory">Loaded accessories: none.</div>
-
-        <div class="mt-4">
-          <div class="font-bold text-gray-400 mb-2 text-sm">Creative Accessory Ideas:</div>
-          <div id="accessory-ideas-list" class="flex flex-wrap gap-2 text-xs">
-            <span class="text-gray-500">Loading ideas...</span>
+          <div class="ideas-block">
+            <div class="ideas-title">Creative Attack Ideas</div>
+            <div id="attack-ideas-list" class="idea-list">
+              <span class="idea-placeholder">Loading ideas...</span>
+            </div>
           </div>
-        </div>
-      </div>
+        </section>
+      </aside>
 
-      <div class="chat-container">
-        <div id="chat-output"></div>
-        <div class="chat-input-area">
-          <input type="text" id="chat-input" placeholder="Type your message..." maxlength="100">
-          <button id="send-button">Send</button>
-        </div>
-      </div>
+      <main class="arena-column">
+        <section class="panel arena-panel">
+          <div class="arena-toolbar">
+            <div id="difficulty-selector">
+              <button class="difficulty-button easy selected" data-difficulty="easy">Easy</button>
+              <button class="difficulty-button medium" data-difficulty="medium">Medium</button>
+              <button class="difficulty-button hard" data-difficulty="hard">Hard</button>
+            </div>
+
+            <div class="ui-buttons-container">
+              <button id="pause-play-button">Start Game</button>
+              <button id="restart-button">Restart Game</button>
+            </div>
+          </div>
+
+          <div class="arena-frame">
+            <canvas id="gameCanvas" width="800" height="450"></canvas>
+            <div
+              id="loading-overlay"
+              class="loading-overlay hidden"
+              style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border-radius: 18px;"
+            >
+              Generating AI code... (Game paused)
+            </div>
+          </div>
+
+          <div class="controls">
+            <p><strong>Player 1 Controls:</strong> A (Left), D (Right), W (Jump)</p>
+            <p><strong>Attack:</strong> Left Mouse Click</p>
+          </div>
+        </section>
+      </main>
+
+      <aside class="side-column side-column-right">
+        <section class="panel accessory-container">
+          <div class="panel-heading">
+            <p class="panel-kicker">Right Loadout</p>
+            <h2 class="accessory-header">Dynamic Accessory Generation</h2>
+          </div>
+          <textarea id="accessory-prompt-input" rows="4" placeholder="Example: sunglasses" maxlength="300"></textarea>
+          <button id="generate-accessory-code">Generate and Load Accessory</button>
+          <div id="code-display-accessory">Loaded accessories: none.</div>
+
+          <div class="ideas-block">
+            <div class="ideas-title">Creative Accessory Ideas</div>
+            <div id="accessory-ideas-list" class="idea-list">
+              <span class="idea-placeholder">Loading ideas...</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel debug-container">
+          <div class="panel-heading">
+            <p class="panel-kicker">Live Feedback</p>
+            <h2 class="debug-header">Debug Log</h2>
+          </div>
+          <div id="debug-output"></div>
+          <div class="debug-actions">
+            <button id="clear-debug-button">Clear Log</button>
+          </div>
+        </section>
+      </aside>
     </div>
   </div>
 

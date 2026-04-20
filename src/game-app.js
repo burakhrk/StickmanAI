@@ -1,7 +1,4 @@
-﻿import { initializeApp } from "firebase/app";
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "firebase/auth";
-import { getFirestore, collection, addDoc, query, onSnapshot, setLogLevel } from "firebase/firestore";
-import { apiUrl, appId, firebaseConfig, initialAuthToken } from "./env.js";
+import { apiUrl } from "./env.js";
 import {
     accessorySchema,
     attackSchema,
@@ -13,52 +10,8 @@ import {
 } from "./ai-config.js";
 import { requestStructuredJson } from "./ai-client.js";
 
-// --- FIREBASE SETUP (MANDATORY FOR PERSISTENCE) ---
-    let db;
-    let auth;
-    let userId = 'loading'; // Will be set after auth
-    let userName = 'P1 (Loading)';
-
-    // Initialize Firebase
-    if (Object.keys(firebaseConfig).length > 0) {
-        const app = initializeApp(firebaseConfig);
-        db = getFirestore(app);
-        auth = getAuth(app);
-        setLogLevel(import.meta.env.DEV ? 'debug' : 'error');
-
-        // Authentication Setup
-        onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                userId = user.uid;
-                userName = `P1 (${user.uid.substring(0, 4)}...)`;
-                console.log("Authenticated user:", userId);
-                setupChatListener();
-            } else {
-                try {
-                    if (initialAuthToken) {
-                        await signInWithCustomToken(auth, initialAuthToken);
-                    } else {
-                        const anonUser = await signInAnonymously(auth);
-                        userId = anonUser.user.uid;
-                        userName = `P1 (${userId.substring(0, 4)}...)`;
-                        setupChatListener();
-                    }
-                } catch (error) {
-                    console.error("Firebase Auth Error: Falling back to anonymous or error state.", error);
-                    userId = 'anonymous_error';
-                    setupChatListener();
-                }
-            }
-        });
-    } else {
-        console.error("Firebase configuration is missing. Chat functionality is disabled.");
-        const chatContainer = document.querySelector('.chat-container');
-        if (chatContainer) {
-            chatContainer.style.display = 'none';
-        }
-    }
-
-    // --- API & GAME STATE SETUP ---
+// --- API & GAME STATE SETUP ---
+    const userName = 'Player 1';
 
     let isGamePaused = true; // YENÄ°: BaÅŸlangÄ±Ã§ta duraklatÄ±lmÄ±ÅŸ
     let accessoryIdCounter = 0; // Aksesuar kimliklerini izlemek iÃ§in
@@ -237,6 +190,51 @@ import { requestStructuredJson } from "./ai-client.js";
     }
     window.Projectile = Projectile; // FIX: Projectile sÄ±nÄ±fÄ±nÄ± global olarak eriÅŸilebilir yap
     
+    function normalizeProjectileBehaviorCode(code) {
+        if (!code) {
+            return '';
+        }
+
+        return code
+            .trim()
+            .replace(/^```(js|javascript)?\s*/i, '')
+            .replace(/\s*```$/, '')
+            .replace(/\bp\.dead\s*=\s*true\b/g, 'p.isAlive = false')
+            .replace(/\bp\.dead\s*=\s*false\b/g, 'p.isAlive = true');
+    }
+
+    function splitProjectileBehaviorFromLogic(attackLogic, behaviorCode) {
+        const existingBehavior = normalizeProjectileBehaviorCode(behaviorCode);
+
+        if (existingBehavior.length > 0) {
+            return {
+                attackLogic,
+                behaviorCode: existingBehavior,
+            };
+        }
+
+        const explicitMarker = attackLogic.search(/\n\s*\/\/[^\n]*projectile behavior[^\n]*\n/i);
+        if (explicitMarker !== -1) {
+            return {
+                attackLogic: attackLogic.slice(0, explicitMarker).trim(),
+                behaviorCode: normalizeProjectileBehaviorCode(attackLogic.slice(explicitMarker)),
+            };
+        }
+
+        const strayProjectileLogic = attackLogic.search(/\n\s*p\.[a-zA-Z_]/);
+        if (strayProjectileLogic !== -1) {
+            return {
+                attackLogic: attackLogic.slice(0, strayProjectileLogic).trim(),
+                behaviorCode: normalizeProjectileBehaviorCode(attackLogic.slice(strayProjectileLogic)),
+            };
+        }
+
+        return {
+            attackLogic,
+            behaviorCode: existingBehavior,
+        };
+    }
+
     /**
      * Mermi oluÅŸturur ve fÄ±rlatÄ±r. (AI kodu bu fonksiyonu kullanmalÄ±dÄ±r)
      * @param {number} startX BaÅŸlangÄ±Ã§ X
@@ -826,90 +824,88 @@ import { requestStructuredJson } from "./ai-client.js";
 
     window.addEventListener('keydown', (e) => {
         // Kontrol alanlarÄ±nÄ±n dÄ±ÅŸÄ±nda basÄ±lan tuÅŸlarÄ± yakala
-        if (document.activeElement.id !== 'chat-input' && document.activeElement.id !== 'attack-prompt-input' && document.activeElement.id !== 'accessory-prompt-input' && !isGamePaused) {
+        if (document.activeElement.id !== 'attack-prompt-input' && document.activeElement.id !== 'accessory-prompt-input' && !isGamePaused) {
             keys[e.key.toUpperCase()] = true;
         }
-
-        if (e.key === 'Enter' && document.activeElement.id === 'chat-input') {
-            sendMessage();
-            e.preventDefault(); 
-        }
-        
     });
 
     window.addEventListener('keyup', (e) => {
         keys[e.key.toUpperCase()] = false;
     });
 
-    // --- CHAT LOGIC (Firestore Integration) ---
-    const chatOutput = document.getElementById('chat-output');
-    const chatInput = document.getElementById('chat-input');
-    const sendButton = document.getElementById('send-button');
+    const debugOutput = document.getElementById('debug-output');
+    const clearDebugButton = document.getElementById('clear-debug-button');
 
-    // Helper to format and add message to UI
+    function normalizeConsoleArgs(args) {
+        return args.map((item) => {
+            if (item instanceof Error) {
+                return item.stack || item.message;
+            }
+
+            if (typeof item === 'string') {
+                return item;
+            }
+
+            try {
+                return JSON.stringify(item);
+            } catch (error) {
+                return String(item);
+            }
+        }).join(' ');
+    }
+
     function addMessage(sender, text, color) {
         const messageElement = document.createElement('div');
         messageElement.className = 'chat-message';
-        messageElement.innerHTML = `<strong style="color: ${color};">${sender}:</strong> ${text}`;
-        
-        chatOutput.appendChild(messageElement);
-        chatOutput.scrollTop = chatOutput.scrollHeight;
+
+        const label = document.createElement('strong');
+        label.style.color = color;
+        label.textContent = `${sender}:`;
+
+        const body = document.createElement('span');
+        body.textContent = ` ${text}`;
+
+        messageElement.appendChild(label);
+        messageElement.appendChild(body);
+        debugOutput.appendChild(messageElement);
+        debugOutput.scrollTop = debugOutput.scrollHeight;
     }
-    // FIX: addMessage fonksiyonunu global hale getir
-    window.addMessage = addMessage; 
+    window.addMessage = addMessage;
 
-    // Firestore: Send Message
-    async function sendMessage() {
-        const message = chatInput.value.trim();
-        if (message === '' || !db || userId === 'loading' || !auth.currentUser) return;
+    const originalConsoleWarn = console.warn.bind(console);
+    const originalConsoleError = console.error.bind(console);
 
-        try {
-            // Firestore'a mesaj ekle (Public collection)
-            await addDoc(collection(db, `artifacts/${appId}/public/data/chat_messages`), {
-                senderId: auth.currentUser.uid,
-                senderName: userName,
-                text: message,
-                timestamp: Date.now(),
-                color: player.color 
-            });
-            chatInput.value = '';
-        } catch (e) {
-            console.error("Error writing document: ", e);
-            addMessage('System', 'Message could not be sent (Firestore error).', '#b91c1c');
+    console.warn = (...args) => {
+        originalConsoleWarn(...args);
+        addMessage('Warn', normalizeConsoleArgs(args), '#f59e0b');
+    };
+
+    console.error = (...args) => {
+        originalConsoleError(...args);
+        addMessage('Error', normalizeConsoleArgs(args), '#ef4444');
+    };
+
+    window.addEventListener('error', (event) => {
+        if (event.error) {
+            addMessage('Runtime', event.error.stack || event.error.message, '#ef4444');
+        } else if (event.message) {
+            addMessage('Runtime', event.message, '#ef4444');
         }
-    }
+    });
 
-    // Firestore: Real-time Listener Setup
-    function setupChatListener() {
-        const chatCollectionRef = collection(db, `artifacts/${appId}/public/data/chat_messages`);
-        
-        // onSnapshot for real-time updates (client-side sorting is used)
-        onSnapshot(chatCollectionRef, (snapshot) => {
-            const messages = [];
-            snapshot.forEach(doc => {
-                messages.push(doc.data());
-            });
-            
-            // Client-side sorting by timestamp (MUST be done if orderBy is omitted from query)
-            messages.sort((a, b) => a.timestamp - b.timestamp); 
-            
-            chatOutput.innerHTML = ''; // Clear previous messages
-            
-            messages.forEach(msg => {
-                const senderDisplay = msg.senderName.split(' ')[0]; // P1, AI, etc.
-                addMessage(senderDisplay, msg.text, msg.color || '#888888');
-            });
+    window.addEventListener('unhandledrejection', (event) => {
+        const reason = event.reason instanceof Error
+            ? event.reason.stack || event.reason.message
+            : normalizeConsoleArgs([event.reason]);
+        addMessage('Promise', reason, '#ef4444');
+    });
 
-            if (messages.length === 0) {
-                addMessage('System', 'Welcome to the arena! You can test the chat box here.', '#888888');
-            }
-        }, (error) => {
-            console.error("Chat Listener Error:", error);
-            addMessage('System', `Error while loading chat: ${error.message}`, '#b91c1c');
-        });
-    }
+    clearDebugButton.addEventListener('click', () => {
+        debugOutput.innerHTML = '';
+        addMessage('System', 'Debug log cleared.', '#9ca3af');
+    });
 
-    sendButton.addEventListener('click', sendMessage);
+    addMessage('System', 'Debug log ready.', '#9ca3af');
     
     // --- ACCESSORY RENDERING & REMOVAL ---
     // const codeDisplayAccessory = document.getElementById('code-display-accessory'); // Redundant const removed
@@ -948,7 +944,7 @@ import { requestStructuredJson } from "./ai-client.js";
             
             const removeButton = document.createElement('span');
             removeButton.className = 'remove-accessory';
-            removeButton.textContent = 'âŒ';
+            removeButton.textContent = 'Remove';
             
             // KaldÄ±rma iÅŸlemi
             removeButton.onclick = function() {
@@ -1159,7 +1155,11 @@ import { requestStructuredJson } from "./ai-client.js";
                 // Kodu temizle
                 attackLogic = attackLogic.trim().replace(/^```(js|javascript)?\s*/i, '').replace(/\s*```$/, '');
                 drawCode = drawCode.trim().replace(/^```(js|javascript)?\s*/i, '').replace(/\s*```$/, '');
-                behaviorCode = behaviorCode.trim().replace(/^```(js|javascript)?\s*/i, '').replace(/\s*```$/, '');
+                behaviorCode = normalizeProjectileBehaviorCode(behaviorCode);
+
+                const attackCodeSections = splitProjectileBehaviorFromLogic(attackLogic, behaviorCode);
+                attackLogic = attackCodeSections.attackLogic;
+                behaviorCode = attackCodeSections.behaviorCode;
                 
                 // 1. Ã–nceki saldÄ±rÄ± ekipmanÄ±nÄ± kaldÄ±r
                 currentAccessories = currentAccessories.filter(acc => !acc.isAttackEquipment);
@@ -1201,6 +1201,7 @@ import { requestStructuredJson } from "./ai-client.js";
                 // HÄ±z deÄŸiÅŸkenlerini kontrol et ve dÃ¼zelt (velX -> vx)
                 correctedLogic = correctedLogic.replace(/opponent\.velX/g, 'opponent.vx').replace(/opponent\.velY/g, 'opponent.vy');
                 correctedLogic = correctedLogic.replace(/player\.velX/g, 'player.vx').replace(/player\.velY/g, 'player.vy');
+                correctedLogic = correctedLogic.replace(/\bp\.dead\b/g, 'p.isAlive');
                 
                 // *** YENÄ° DÃœZELTME: HandRX/RY const redeclaration hatasÄ±nÄ± Ã¶nle ***
                 // handRX ve handRY'nin const ile tekrar tanÄ±mlanmasÄ±nÄ± Ã¶nle (eÄŸer AI eklediyse)
@@ -1214,7 +1215,12 @@ import { requestStructuredJson } from "./ai-client.js";
                     const FIXED_DAMAGE = 10;
 
                     // Mermi DavranÄ±ÅŸ Kodunu Dizeye Ekle
-                    const behaviorCodeString = behaviorCode.trim().replace(/\n/g, ' ').replace(/\r/g, ' ');
+                    const behaviorCodeString = behaviorCode
+                        .replace(/\\/g, '\\\\')
+                        .replace(/`/g, '\\`')
+                        .replace(/\$\{/g, '\\${')
+                        .replace(/\n/g, ' ')
+                        .replace(/\r/g, ' ');
 
                     // SaldÄ±rÄ± sÄ±rasÄ±nda silahÄ±n/merminin Ã§izimini ve mantÄ±ÄŸÄ±nÄ± birleÅŸtir
                     const fullCode = 
@@ -1244,7 +1250,7 @@ import { requestStructuredJson } from "./ai-client.js";
                         <div class="accessory-item">
                             <span style="font-weight: bold; color: #d97706;">ACTIVE ATTACK:</span>
                             <span>${attackDescription}</span>
-                            <span class="remove-accessory" onclick="resetAttack()">âŒ</span>
+                            <span class="remove-accessory" onclick="resetAttack()">Remove</span>
                         </div>
                         <div style="font-size: 0.8rem; color: #6b7280; margin-top: 5px;">(Fixed damage: ${FIXED_DAMAGE})</div>
                     `;
@@ -1293,7 +1299,7 @@ import { requestStructuredJson } from "./ai-client.js";
         listElement.innerHTML = ''; // Temizle
         
         if (!ideas || ideas.length === 0) {
-            listElement.innerHTML = '<span class="text-gray-500">No ideas found.</span>';
+            listElement.innerHTML = '<span class="idea-placeholder">No ideas found.</span>';
             return;
         }
 
@@ -1317,8 +1323,8 @@ import { requestStructuredJson } from "./ai-client.js";
         const accessoryIdeasList = document.getElementById('accessory-ideas-list');
 
         // YÃ¼kleme durumunu gÃ¶ster
-        attackIdeasList.innerHTML = '<span class="text-gray-500">Loading ideas...</span>';
-        accessoryIdeasList.innerHTML = '<span class="text-gray-500">Loading ideas...</span>';
+        attackIdeasList.innerHTML = '<span class="idea-placeholder">Loading ideas...</span>';
+        accessoryIdeasList.innerHTML = '<span class="idea-placeholder">Loading ideas...</span>';
 
         let ideas = null;
         try {
@@ -1388,7 +1394,7 @@ import { requestStructuredJson } from "./ai-client.js";
         }
 
         // 3. Handle Player Input 
-        if (document.activeElement.id !== 'chat-input' && document.activeElement.id !== 'attack-prompt-input' && document.activeElement.id !== 'accessory-prompt-input') {
+        if (document.activeElement.id !== 'attack-prompt-input' && document.activeElement.id !== 'accessory-prompt-input') {
             if (keys['A']) player.move('left');
             if (keys['D']) player.move('right');
             if (keys['W']) player.move('jump');
