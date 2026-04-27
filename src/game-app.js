@@ -35,6 +35,8 @@ import { requestStructuredJson } from "./ai-client.js";
     const accessoryPromptInput = document.getElementById('accessory-prompt-input');
     const codeDisplayAttack = document.getElementById('code-display-attack');
     const codeDisplayAccessory = document.getElementById('code-display-accessory');
+    const attackPanel = document.getElementById('attack-panel');
+    const accessoryPanel = document.getElementById('accessory-panel');
     const attackFamilySelector = document.getElementById('attack-family-selector');
     const attackFamilyDescription = document.getElementById('attack-family-description');
     const coachKicker = document.getElementById('coach-kicker');
@@ -189,6 +191,12 @@ import { requestStructuredJson } from "./ai-client.js";
             this.armFrames = 2;
             this.spawnGraceFrames = 10;
             this.ownerSafeRadius = Math.max(size * 2.2, owner ? owner.headRadius * 2.2 : 0, 28);
+            this.travelDistance = 0;
+            const launchSpeed = Math.hypot(vx, vy);
+            this.maxAgeFrames = Math.round(
+                Math.min(220, Math.max(26, 34 + size * 3 + launchSpeed * 9 + damage * 1.2))
+            );
+            this.stagnationFrames = Math.round(Math.max(18, Math.min(this.maxAgeFrames * 0.55, 80)));
             
             this.customUpdate = null;
             if (behaviorCode && behaviorCode.length > 0) {
@@ -205,6 +213,8 @@ import { requestStructuredJson } from "./ai-client.js";
         update() {
             if (!this.isAlive) return;
             this.ageFrames += 1;
+            const previousX = this.x;
+            const previousY = this.y;
             
             if (this.customUpdate) { // Execute custom logic
                 try {
@@ -220,6 +230,19 @@ import { requestStructuredJson } from "./ai-client.js";
             }
             
             // Basit mermi Ã¶mrÃ¼/sÄ±nÄ±r kontrolÃ¼ (Ekran dÄ±ÅŸÄ±na Ã§Ä±kanlarÄ± kaldÄ±r)
+            this.travelDistance += Math.hypot(this.x - previousX, this.y - previousY);
+
+            if (this.ageFrames > this.maxAgeFrames) {
+                this.isAlive = false;
+            }
+
+            if (
+                this.ageFrames > this.stagnationFrames &&
+                this.travelDistance < Math.max(16, this.size * 1.8)
+            ) {
+                this.isAlive = false;
+            }
+
             if (this.ageFrames > 1 && (this.x < 0 || this.x > canvas.width || this.y > FLOOR_Y || this.y < 0)) {
                 this.isAlive = false;
             }
@@ -791,7 +814,7 @@ import { requestStructuredJson } from "./ai-client.js";
         particles = [];
         
         // Dinamik iÃ§eriÄŸi sÄ±fÄ±rla (SaldÄ±rÄ± ve Ekipmanlar)
-        resetAttack();
+        resetAttack({ pauseGame: false, quiet: true });
         
         // Oyun durumunu baÅŸlat
         isGamePaused = false;
@@ -984,6 +1007,22 @@ import { requestStructuredJson } from "./ai-client.js";
         return unsupportedAttackKeywords.some((keyword) => normalizedPrompt.includes(keyword));
     }
 
+    function hasPromptValue(input) {
+        return input.value.trim().length > 0;
+    }
+
+    function syncPromptCtaState() {
+        const attackReady = hasPromptValue(attackPromptInput);
+        const accessoryReady = hasPromptValue(accessoryPromptInput);
+
+        attackPromptInput.classList.toggle('has-value', attackReady);
+        accessoryPromptInput.classList.toggle('has-value', accessoryReady);
+        attackPanel.classList.toggle('is-prompt-ready', attackReady);
+        accessoryPanel.classList.toggle('is-prompt-ready', accessoryReady);
+        generateCodeAttackButton.classList.toggle('is-ready-to-generate', attackReady && !generateCodeAttackButton.disabled);
+        generateCodeAccessoryButton.classList.toggle('is-ready-to-generate', accessoryReady && !generateCodeAccessoryButton.disabled);
+    }
+
     function updateAttackFamilyUi() {
         const activeFamily = getAttackFamilyConfig(selectedAttackFamily);
         attackFamilyDescription.textContent = activeFamily.summary;
@@ -992,6 +1031,8 @@ import { requestStructuredJson } from "./ai-client.js";
         Array.from(attackFamilySelector.querySelectorAll('.family-button')).forEach((button) => {
             button.classList.toggle('active', button.dataset.family === selectedAttackFamily);
         });
+
+        syncPromptCtaState();
     }
 
     function handleAttackFamilyChange(nextFamily) {
@@ -1029,7 +1070,7 @@ import { requestStructuredJson } from "./ai-client.js";
     }
 
     function setActiveTargets(targetIds) {
-        ['attack-panel', 'accessory-panel', 'pause-play-button', 'generate-attack-code', 'generate-accessory-code', 'gameCanvas']
+        ['attack-panel', 'accessory-panel', 'pause-play-button', 'generate-attack-code', 'generate-accessory-code', 'gameCanvas', 'attack-prompt-input', 'accessory-prompt-input']
             .forEach((id) => {
                 const element = document.getElementById(id);
                 if (element) {
@@ -1050,12 +1091,13 @@ import { requestStructuredJson } from "./ai-client.js";
     }
 
     function updateCoachState() {
+        const attackPromptReady = hasPromptValue(attackPromptInput);
         let activeStep = 'family';
         let title = 'Pick family';
         let body = 'Pick a family, generate one attack, then start the match.';
         let kicker = 'Step 1';
         let status = 'Setup';
-        let targets = ['attack-panel', 'generate-attack-code'];
+        let targets = ['attack-panel', 'attack-prompt-input'];
 
         if (isGeneratingCode) {
             activeStep = 'attack';
@@ -1064,6 +1106,13 @@ import { requestStructuredJson } from "./ai-client.js";
             kicker = 'Step 2';
             status = 'Build';
             targets = ['attack-panel', 'accessory-panel'];
+        } else if (!hasCustomAttackLoaded() && attackPromptReady) {
+            activeStep = 'attack';
+            title = 'Generate';
+            body = 'Your prompt is ready. Generate the attack.';
+            kicker = 'Step 2';
+            status = 'Ready';
+            targets = ['attack-prompt-input', 'generate-attack-code'];
         } else if (!hasCustomAttackLoaded()) {
             activeStep = 'family';
         } else if (isGamePaused) {
@@ -1089,6 +1138,13 @@ import { requestStructuredJson } from "./ai-client.js";
         updateStepRail(activeStep);
         setActiveTargets(targets);
     }
+
+    [attackPromptInput, accessoryPromptInput].forEach((input) => {
+        input.addEventListener('input', () => {
+            syncPromptCtaState();
+            updateCoachState();
+        });
+    });
     
     // --- ACCESSORY RENDERING & REMOVAL ---
     // const codeDisplayAccessory = document.getElementById('code-display-accessory'); // Redundant const removed
@@ -1131,6 +1187,10 @@ import { requestStructuredJson } from "./ai-client.js";
             
             // KaldÄ±rma iÅŸlemi
             removeButton.onclick = function() {
+                if (accessory.isAttackEquipment) {
+                    resetAttack();
+                    return;
+                }
                 // Diziden bu ID'ye sahip aksesuarÄ± filtrele
                 currentAccessories = currentAccessories.filter(a => a.id !== accessory.id);
                 renderAccessoryList(); // Listeyi yeniden Ã§iz
@@ -1144,7 +1204,18 @@ import { requestStructuredJson } from "./ai-client.js";
     }
 
     // --- ATTACK RESET FUNCTION (YENÄ°) ---
-    function resetAttack() {
+    function resetAttack(options = {}) {
+        const { pauseGame = true, quiet = false } = options;
+        const wasRunning = !isGamePaused;
+
+        if (pauseGame) {
+            isGamePaused = true;
+            pausePlayButton.textContent = 'Start Match';
+            loadingOverlay.classList.add('hidden');
+            if (wasRunning && !quiet) {
+                addMessage('System', 'Game paused so you can edit the attack.', '#3b82f6');
+            }
+        }
         // Dinamik saldÄ±rÄ± fonksiyonunu varsayÄ±lana ayarla
         dynamicAttackFunction = defaultAttack;
         // SaldÄ±rÄ± ekipmanlarÄ±nÄ± kaldÄ±r
@@ -1155,6 +1226,8 @@ import { requestStructuredJson } from "./ai-client.js";
         // const codeDisplayAttack = document.getElementById('code-display-attack'); // Redundant const removed
         codeDisplayAttack.textContent = "Default attack loaded.";
         addMessage('System', 'Attack mechanic reset to default. Your weapon was removed.', '#ef4444');
+        fetchCreativeIdeas();
+        syncPromptCtaState();
         updateCoachState();
     }
 
@@ -1224,6 +1297,7 @@ import { requestStructuredJson } from "./ai-client.js";
         } else if (schemaType === 'accessory') {
             generateCodeAttackButton.disabled = true;
         }
+        syncPromptCtaState();
 
         let responseSchema = null;
         let contextData = {};
@@ -1279,6 +1353,7 @@ import { requestStructuredJson } from "./ai-client.js";
         // FIX: KarÅŸÄ±lÄ±klÄ± butonlarÄ± tekrar aktif et
         generateCodeAttackButton.disabled = false;
         generateCodeAccessoryButton.disabled = false;
+        syncPromptCtaState();
         fetchCreativeIdeas();
         
         if (responseText) {
@@ -1519,8 +1594,12 @@ import { requestStructuredJson } from "./ai-client.js";
             tag.title = 'Click to use this idea';
             
             tag.onclick = () => {
+                listElement.querySelectorAll('.idea-tag').forEach((chip) => chip.classList.remove('is-selected-idea'));
+                tag.classList.add('is-selected-idea');
                 targetInput.value = idea;
                 targetInput.focus();
+                syncPromptCtaState();
+                updateCoachState();
             };
             listElement.appendChild(tag);
         });
@@ -1841,6 +1920,7 @@ import { requestStructuredJson } from "./ai-client.js";
         renderAccessoryList(); // BoÅŸ listeyi ilk baÅŸta gÃ¶ster
         addMessage('System', 'Game is paused. Press Start Match to begin.', '#888888');
         renderAttackFamilySelector();
+        syncPromptCtaState();
         updateCoachState();
         fetchCreativeIdeas(); // YaratÄ±cÄ± fikirleri yÃ¼kle
         

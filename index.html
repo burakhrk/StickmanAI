@@ -29,14 +29,16 @@
             <p id="attack-family-description" class="family-description"></p>
           </div>
           <textarea id="attack-prompt-input" rows="3" placeholder="Example: green light sword" maxlength="300"></textarea>
+          <div class="prompt-actions">
+            <button id="generate-attack-code">Generate Attack</button>
+            <button id="reset-attack-button">Reset Attack</button>
+          </div>
           <details class="ideas-drawer" open>
             <summary class="ideas-summary">Quick ideas</summary>
             <div id="attack-ideas-list" class="idea-list">
               <span class="idea-placeholder">Loading ideas...</span>
             </div>
           </details>
-          <button id="generate-attack-code">Generate Attack</button>
-          <button id="reset-attack-button">Reset Attack</button>
           <div id="code-display-attack">Default attack loaded.</div>
         </section>
       </aside>
@@ -98,13 +100,15 @@
             <h2 class="accessory-header">Gear</h2>
           </div>
           <textarea id="accessory-prompt-input" rows="3" placeholder="Example: sunglasses" maxlength="300"></textarea>
+          <div class="prompt-actions">
+            <button id="generate-accessory-code">Generate Gear</button>
+          </div>
           <details class="ideas-drawer" open>
             <summary class="ideas-summary">Quick ideas</summary>
             <div id="accessory-ideas-list" class="idea-list">
               <span class="idea-placeholder">Loading ideas...</span>
             </div>
           </details>
-          <button id="generate-accessory-code">Generate Gear</button>
           <div id="code-display-accessory">No gear loaded.</div>
         </section>
 

@@ -351,10 +351,29 @@ textarea {
     color: var(--text-main);
     font: inherit;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
 textarea::placeholder {
     color: #6b8ab0;
+}
+
+textarea.has-value,
+textarea.is-active-target {
+    border-color: rgba(245, 185, 84, 0.5);
+    box-shadow: 0 0 0 3px rgba(245, 185, 84, 0.14);
+    background: rgba(9, 16, 32, 0.98);
+}
+
+.prompt-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.prompt-actions > button {
+    flex: 1 1 150px;
 }
 
 #code-display-attack,
@@ -413,7 +432,7 @@ textarea::placeholder {
 }
 
 .ideas-drawer {
-    margin-top: 12px;
+    margin-top: 0;
     padding-top: 10px;
     border-top: 1px solid rgba(148, 163, 184, 0.08);
 }
@@ -463,6 +482,12 @@ textarea::placeholder {
 .idea-tag:hover {
     transform: translateY(-1px);
     background: rgba(20, 35, 60, 0.96);
+}
+
+.idea-tag.is-selected-idea {
+    border-color: rgba(245, 185, 84, 0.48);
+    background: rgba(245, 158, 11, 0.14);
+    color: #fff3dc;
 }
 
 .idea-placeholder {
@@ -574,6 +599,18 @@ textarea::placeholder {
 #generate-accessory-code.is-active-target,
 #gameCanvas.is-active-target {
     box-shadow: 0 0 0 3px rgba(245, 185, 84, 0.26);
+}
+
+#generate-attack-code.is-ready-to-generate,
+#generate-accessory-code.is-ready-to-generate {
+    box-shadow:
+        0 0 0 3px rgba(245, 185, 84, 0.18),
+        0 16px 28px rgba(245, 158, 11, 0.22);
+    filter: saturate(1.08);
+}
+
+.panel.is-prompt-ready {
+    border-color: rgba(245, 185, 84, 0.28);
 }
 
 .debug-actions {
