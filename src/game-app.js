@@ -1047,34 +1047,34 @@ import { requestStructuredJson } from "./ai-client.js";
 
     function updateCoachState() {
         let activeStep = 'family';
-        let title = 'Choose a family and build one attack';
+        let title = 'Pick family';
         let body = 'Pick a family, generate one attack, then start the match.';
         let kicker = 'Step 1';
-        let status = 'Setup Mode';
+        let status = 'Setup';
         let targets = ['attack-panel', 'generate-attack-code'];
 
         if (isGeneratingCode) {
             activeStep = 'attack';
-            title = 'Generating your loadout';
+            title = 'Building';
             body = 'The match is paused while the loadout is being built.';
             kicker = 'Step 2';
-            status = 'Generating';
+            status = 'Build';
             targets = ['attack-panel', 'accessory-panel'];
         } else if (!hasCustomAttackLoaded()) {
             activeStep = 'family';
         } else if (isGamePaused) {
             activeStep = 'start';
-            title = 'Start the match';
+            title = 'Start';
             body = 'Your attack is loaded. Press Start Match and test it.';
             kicker = 'Step 3';
             status = 'Ready';
             targets = ['pause-play-button', 'gameCanvas'];
         } else {
             activeStep = 'fight';
-            title = 'Fight now, pause to rebuild';
+            title = 'Live';
             body = 'Attack live, then pause to swap family or regenerate.';
             kicker = 'Step 4';
-            status = 'Live Match';
+            status = 'Live';
             targets = ['pause-play-button', 'gameCanvas'];
         }
 
@@ -1091,7 +1091,7 @@ import { requestStructuredJson } from "./ai-client.js";
 
     function renderAccessoryList() {
         if (currentAccessories.length === 0) {
-            codeDisplayAccessory.innerHTML = 'Loaded accessories: none.';
+            codeDisplayAccessory.innerHTML = 'No gear loaded.';
             return;
         }
 
@@ -1149,7 +1149,7 @@ import { requestStructuredJson } from "./ai-client.js";
         renderAccessoryList();
         
         // const codeDisplayAttack = document.getElementById('code-display-attack'); // Redundant const removed
-        codeDisplayAttack.textContent = "Loaded code: default knockback attack.";
+        codeDisplayAttack.textContent = "Default attack loaded.";
         addMessage('System', 'Attack mechanic reset to default. Your weapon was removed.', '#ef4444');
         updateCoachState();
     }
@@ -1563,7 +1563,7 @@ import { requestStructuredJson } from "./ai-client.js";
             generateCodeAttackButton,
             'attack',
             buildAttackSystemPrompt(selectedAttackFamily),
-            'Attack code generated and loaded successfully. Try it with left click.',
+            'Attack ready. Try it with left click.',
         );
     });
 
@@ -1574,7 +1574,7 @@ import { requestStructuredJson } from "./ai-client.js";
     // const codeDisplayAccessory = document.getElementById('code-display-accessory'); // Redundant const removed
 
     generateCodeAccessoryButton.addEventListener('click', () => {
-        generateCode(accessoryPromptInput, codeDisplayAccessory, generateCodeAccessoryButton, 'accessory', buildAccessorySystemPrompt(), 'Accessory code generated and loaded successfully. Check your character.');
+        generateCode(accessoryPromptInput, codeDisplayAccessory, generateCodeAccessoryButton, 'accessory', buildAccessorySystemPrompt(), 'Gear ready.');
     });
 
     function canProjectileHitTarget(projectile, target) {

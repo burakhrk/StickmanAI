@@ -13,18 +13,15 @@
   <div class="page-shell">
     <header class="topbar">
       <div>
-        <p class="eyebrow">AI Sandbox Arena</p>
         <h1>Stickman Arena</h1>
       </div>
-      <div class="topbar-badge">Combat sandbox</div>
     </header>
 
     <div class="arena-layout">
       <aside class="side-column">
         <section id="attack-panel" class="panel attack-container">
           <div class="panel-heading">
-            <p class="panel-kicker">Left Loadout</p>
-            <h2 class="attack-header">Attack Lab</h2>
+            <h2 class="attack-header">Attack</h2>
           </div>
           <div class="family-block">
             <div class="ideas-title">Family</div>
@@ -34,14 +31,14 @@
           <textarea id="attack-prompt-input" rows="3" placeholder="Example: green light sword" maxlength="300"></textarea>
           <button id="generate-attack-code">Generate Attack</button>
           <button id="reset-attack-button">Reset Attack</button>
-          <div id="code-display-attack">Loaded code: default knockback attack.</div>
+          <div id="code-display-attack">Default attack loaded.</div>
 
-          <div class="ideas-block">
-            <div class="ideas-title">Ideas</div>
+          <details class="ideas-drawer">
+            <summary class="ideas-summary">Quick ideas</summary>
             <div id="attack-ideas-list" class="idea-list">
               <span class="idea-placeholder">Loading ideas...</span>
             </div>
-          </div>
+          </details>
         </section>
       </aside>
 
@@ -50,10 +47,10 @@
           <div class="coach-panel" id="coach-panel">
             <div class="coach-copy">
               <p id="coach-kicker" class="coach-kicker">Step 1</p>
-              <h2 id="coach-title" class="coach-title">Choose an attack family</h2>
+              <h2 id="coach-title" class="coach-title">Pick family</h2>
               <p id="coach-body" class="coach-body">Pick a family, generate one attack, then start the match.</p>
             </div>
-            <div id="coach-status" class="coach-status">Setup Mode</div>
+            <div id="coach-status" class="coach-status">Setup</div>
           </div>
 
           <div class="step-rail">
@@ -86,7 +83,7 @@
               class="loading-overlay hidden"
               style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border-radius: 18px;"
             >
-              Generating AI code... (Game paused)
+              Building...
             </div>
           </div>
 
@@ -99,25 +96,23 @@
       <aside class="side-column side-column-right">
         <section id="accessory-panel" class="panel accessory-container">
           <div class="panel-heading">
-            <p class="panel-kicker">Right Loadout</p>
-            <h2 class="accessory-header">Gear Lab</h2>
+            <h2 class="accessory-header">Gear</h2>
           </div>
           <textarea id="accessory-prompt-input" rows="3" placeholder="Example: sunglasses" maxlength="300"></textarea>
           <button id="generate-accessory-code">Generate Gear</button>
-          <div id="code-display-accessory">Loaded accessories: none.</div>
+          <div id="code-display-accessory">No gear loaded.</div>
 
-          <div class="ideas-block">
-            <div class="ideas-title">Gear Ideas</div>
+          <details class="ideas-drawer">
+            <summary class="ideas-summary">Quick ideas</summary>
             <div id="accessory-ideas-list" class="idea-list">
               <span class="idea-placeholder">Loading ideas...</span>
             </div>
-          </div>
+          </details>
         </section>
 
         <section class="panel debug-container">
           <div class="panel-heading">
-            <p class="panel-kicker">Live Feedback</p>
-            <h2 class="debug-header">Debug Log</h2>
+            <h2 class="debug-header">Debug</h2>
           </div>
           <div id="debug-output"></div>
           <div class="debug-actions">
