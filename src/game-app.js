@@ -39,6 +39,40 @@ import { requestStructuredJson } from "./ai-client.js";
     const AIR_DRAG = 0.99;
     const GROUND_FRICTION = 0.85;
 
+    const unsupportedAttackKeywords = [
+        'kick',
+        'spin kick',
+        'roundhouse',
+        'dropkick',
+        'punch',
+        'uppercut',
+        'elbow',
+        'knee strike',
+        'headbutt',
+        'slap',
+        'grapple',
+        'wrestling',
+        'martial art',
+        'karate',
+        'taekwondo',
+        'kung fu',
+        'spinning move',
+        'flip attack',
+        'body slam',
+        'tekme',
+        'doner tekme',
+        'döner tekme',
+        'yumruk',
+        'dirsek',
+        'kafa atma',
+        'gures',
+        'güreş',
+    ];
+
+    let isGeneratingCode = false;
+    let ideasHaveLoaded = false;
+    let ideasAreLoading = false;
+
     
     // --- MOUSE TRACKING ---
     let mouseX = canvas.width / 2;
@@ -906,6 +940,11 @@ import { requestStructuredJson } from "./ai-client.js";
     });
 
     addMessage('System', 'Debug log ready.', '#9ca3af');
+
+    function isUnsupportedAttackPrompt(promptText) {
+        const normalizedPrompt = promptText.toLocaleLowerCase('tr-TR');
+        return unsupportedAttackKeywords.some((keyword) => normalizedPrompt.includes(keyword));
+    }
     
     // --- ACCESSORY RENDERING & REMOVAL ---
     // const codeDisplayAccessory = document.getElementById('code-display-accessory'); // Redundant const removed
@@ -1010,10 +1049,21 @@ import { requestStructuredJson } from "./ai-client.js";
             console.error("Please enter a description.");
             return;
         }
+
+        if (schemaType === 'attack' && isUnsupportedAttackPrompt(promptText)) {
+            codeDisplayElement.innerHTML = `
+                <strong>Unsupported attack style.</strong><br>
+                Please request a weapon, projectile, gadget, or magic-based attack instead.<br>
+                Examples: lightsaber, plasma rifle, magic spell, arc cannon, fire staff.
+            `;
+            addMessage('System', 'Physical move attacks like kicks or punches are blocked. Please use weapons, projectiles, gadgets, or spells instead.', '#f59e0b');
+            return;
+        }
         
         // OYUNU DURAKLAT VE BUTONU DEVRE DIÅžI BIRAK
         // FIX: KarÅŸÄ±lÄ±klÄ± butonlarÄ± da deaktif et
         isGamePaused = true; 
+        isGeneratingCode = true;
         
         // YENÄ°: YÃ¼kleme mesajÄ±nÄ± gÃ¼ncelle
         loadingOverlay.textContent = schemaType === 'attack' ? 'Generating attack...' : 'Generating accessory...';
@@ -1047,7 +1097,7 @@ import { requestStructuredJson } from "./ai-client.js";
         if (schemaType === 'accessory') {
             userQuery = `The stickman currently has the following physical dimensions: ${JSON.stringify(contextData)}. Based on this context and the user's request: ${promptText}, generate the accessory code.`;
         } else if (schemaType === 'attack') {
-             userQuery = `Based on the user's request: ${promptText}, generate the attack code in the required JSON format.`;
+             userQuery = `Based on the user's request: ${promptText}, generate a weapon, projectile, gadget, or magic-based attack in the required JSON format. If the request sounds like a body move, reinterpret it as a combat tool instead of animating the full character body.`;
         }
 
         const payload = {
@@ -1075,6 +1125,7 @@ import { requestStructuredJson } from "./ai-client.js";
         
         // KOD OLUÅžUMU BÄ°TTÄ°ÄžÄ°NDE OYUN PAUSE KALACAK.
         isGamePaused = true; 
+        isGeneratingCode = false;
         loadingOverlay.classList.add('hidden');
         // FIX: KarÅŸÄ±lÄ±klÄ± butonlarÄ± tekrar aktif et
         generateCodeAttackButton.disabled = false;
@@ -1318,9 +1369,15 @@ import { requestStructuredJson } from "./ai-client.js";
     }
     
     // --- IDEA FETCHING FUNCTION (YENÄ°) ---
-    async function fetchCreativeIdeas() {
+    async function fetchCreativeIdeas(forceRefresh = false) {
         const attackIdeasList = document.getElementById('attack-ideas-list');
         const accessoryIdeasList = document.getElementById('accessory-ideas-list');
+
+        if (!forceRefresh && (ideasHaveLoaded || ideasAreLoading || isGeneratingCode || !isGamePaused)) {
+            return;
+        }
+
+        ideasAreLoading = true;
 
         // YÃ¼kleme durumunu gÃ¶ster
         attackIdeasList.innerHTML = '<span class="idea-placeholder">Loading ideas...</span>';
@@ -1341,6 +1398,9 @@ import { requestStructuredJson } from "./ai-client.js";
             renderIdeas(DEFAULT_ATTACK_IDEAS, 'attack-ideas-list', attackPromptInput);
             renderIdeas(DEFAULT_ACCESSORY_IDEAS, 'accessory-ideas-list', accessoryPromptInput);
         }
+
+        ideasHaveLoaded = true;
+        ideasAreLoading = false;
     }
 
 
@@ -1581,6 +1641,5 @@ import { requestStructuredJson } from "./ai-client.js";
         fetchCreativeIdeas(); // YaratÄ±cÄ± fikirleri yÃ¼kle
         
         // YENÄ°: Fikirleri 12 saniyede bir yenile
-        setInterval(fetchCreativeIdeas, 12000); 
     }
 

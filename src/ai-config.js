@@ -1,7 +1,7 @@
 export const DEFAULT_ATTACK_IDEAS = [
-  "Fireball shot",
-  "Bouncing lightning orb",
-  "Laser rifle blast",
+  "Lightsaber slash wave",
+  "Arcane bolt staff",
+  "Plasma cannon burst",
 ];
 
 export const DEFAULT_ACCESSORY_IDEAS = [
@@ -30,6 +30,9 @@ GAME ENGINE DETAILS AND AVAILABLE VARIABLES:
     - Use the PROJECTILE_BEHAVIOR_CODE constant.
     - Use handRX and handRY as the projectile origin.
     - Use only vx and vy for speed values.
+    - Attacks must be weapon-based, gadget-based, projectile-based, or magic/spell-based.
+    - Do NOT build melee choreography such as kicks, punches, spinning moves, flips, grapples, or body-animation-heavy martial arts attacks.
+    - If the user asks for a physical move, reinterpret it as a themed weapon or spell attack instead of animating the whole body.
 
 4. PROJECTILE BEHAVIOR CODE:
     - This code can only access 'p', 'player', 'opponent', 'GRAVITY', and 'FLOOR_Y'.
@@ -114,6 +117,9 @@ export function buildAttackSystemPrompt() {
         CONSTRAINTS AND CONTEXT:
         ${GAME_CONTEXT_DETAILS}
         - JSON output must be perfectly structured.
+        - Only produce combat attacks built around weapons, guns, cannons, staffs, blades, spells, beams, blasts, bombs, or summoned objects.
+        - Reject body-move concepts like spin kicks, punches, wrestling moves, karate combos, acrobatics, and other full-character animation requests.
+        - If the user asks for a body move, convert it into a visually similar combat tool. Example: "spinning kick" becomes an "energy chakram" or "whirlwind blade".
         - If the user requests a weapon, include its drawing code in 'requiredEquipmentDrawCode'.
 
         TASK: Return a single JSON OBJECT strictly adhering to the attackSchema. Use English comments for any complex parts.
@@ -139,12 +145,12 @@ export function buildIdeasPayload() {
   return {
     contents: [{
       parts: [{
-        text: "Generate 3 extremely short, simple attack ideas and 3 simple accessory ideas suitable for a stickman fighting game. Ideas must be easy to translate into code.",
+        text: "Generate 3 extremely short attack ideas and 3 simple accessory ideas suitable for a stickman fighting game. Attack ideas must be weapon-based, projectile-based, gadget-based, or magic-based. Do not suggest kicks, punches, wrestling moves, flips, or body-animation-heavy attacks. Ideas must be easy to translate into code.",
       }],
     }],
     systemInstruction: {
       parts: [{
-        text: "You are a creative director for a stickman game. Provide a JSON object with creative ideas. Ideas must be extremely short, concise, and directly translatable into simple game code. Use simple English phrases.",
+        text: "You are a creative director for a stickman game. Provide a JSON object with creative ideas. Attack ideas must stay in the lane of swords, guns, cannons, magic spells, beams, bombs, staffs, drones, or summoned combat objects. Never propose kicks, punches, grapples, martial-arts combos, or animation-heavy body attacks. Use simple English phrases.",
       }],
     },
     generationConfig: {
