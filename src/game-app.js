@@ -1693,6 +1693,7 @@ import { requestStructuredJson } from "./ai-client.js";
         gameLoop(); 
         renderAccessoryList(); // BoÅŸ listeyi ilk baÅŸta gÃ¶ster
         addMessage('System', 'Game is paused. Press Start Game to begin.', '#888888');
+        renderAttackFamilySelector();
         fetchCreativeIdeas(); // YaratÄ±cÄ± fikirleri yÃ¼kle
         
         // YENÄ°: Fikirleri 12 saniyede bir yenile
