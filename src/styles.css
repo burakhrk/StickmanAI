@@ -314,6 +314,51 @@ textarea::placeholder {
     border-top: 1px solid rgba(148, 163, 184, 0.12);
 }
 
+.family-block {
+    margin-bottom: 14px;
+    padding: 14px;
+    border-radius: 18px;
+    background: rgba(7, 12, 24, 0.72);
+    border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.family-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.family-button {
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 999px;
+    padding: 8px 11px;
+    background: rgba(15, 23, 42, 0.82);
+    color: #d5f3ff;
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+}
+
+.family-button:hover {
+    transform: translateY(-1px);
+    background: rgba(20, 35, 60, 0.96);
+}
+
+.family-button.active {
+    background: linear-gradient(135deg, rgba(255, 159, 67, 0.28), rgba(249, 115, 22, 0.22));
+    border-color: rgba(255, 210, 157, 0.55);
+    color: #fff7ed;
+}
+
+.family-description {
+    margin: 10px 0 0;
+    font-size: 0.82rem;
+    line-height: 1.45;
+    color: #a9bfd8;
+}
+
 .ideas-title {
     margin-bottom: 10px;
     font-size: 0.8rem;

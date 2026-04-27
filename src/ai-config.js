@@ -1,14 +1,62 @@
-export const DEFAULT_ATTACK_IDEAS = [
-  "Lightsaber slash wave",
-  "Arcane bolt staff",
-  "Plasma cannon burst",
+export const DEFAULT_ATTACK_FAMILY = "blade";
+
+export const ATTACK_FAMILIES = [
+  {
+    id: "blade",
+    label: "Blade",
+    shortLabel: "Blades",
+    summary: "Energy swords, sabers, axes, chakrams, and cutting weapon attacks.",
+    examples: ["Lightsaber slash wave", "Twin chakram burst", "Arc blade crescent"],
+  },
+  {
+    id: "ballistic",
+    label: "Ballistic",
+    shortLabel: "Ballistics",
+    summary: "Rifles, pistols, cannons, railguns, and other firearm-style attacks.",
+    examples: ["Plasma rifle burst", "Railgun tracer shot", "Scatter cannon blast"],
+  },
+  {
+    id: "arcane",
+    label: "Arcane",
+    shortLabel: "Arcane",
+    summary: "Staffs, spell circles, runes, curses, and pure magic projectiles.",
+    examples: ["Arcane bolt staff", "Rune beam pulse", "Frost sigil lance"],
+  },
+  {
+    id: "explosive",
+    label: "Explosive",
+    shortLabel: "Explosives",
+    summary: "Bombs, grenades, rockets, mines, and burst-heavy payload attacks.",
+    examples: ["Sticky bomb lob", "Micro rocket volley", "Pulse mine throw"],
+  },
+  {
+    id: "summon",
+    label: "Summon",
+    shortLabel: "Summons",
+    summary: "Combat drones, spectral weapons, orbiting orbs, and summoned helpers.",
+    examples: ["Drone laser escort", "Spectral spear launch", "Orbital shard ring"],
+  },
 ];
+
+export const DEFAULT_ATTACK_IDEAS_BY_FAMILY = Object.fromEntries(
+  ATTACK_FAMILIES.map((family) => [family.id, family.examples]),
+);
+
+export const DEFAULT_ATTACK_IDEAS = DEFAULT_ATTACK_IDEAS_BY_FAMILY[DEFAULT_ATTACK_FAMILY];
 
 export const DEFAULT_ACCESSORY_IDEAS = [
   "Robot arm weapon",
   "Plasma rifle",
   "Sniper goggles",
 ];
+
+export function getAttackFamilyConfig(familyId = DEFAULT_ATTACK_FAMILY) {
+  return ATTACK_FAMILIES.find((family) => family.id === familyId) || ATTACK_FAMILIES[0];
+}
+
+export function getDefaultAttackIdeas(familyId = DEFAULT_ATTACK_FAMILY) {
+  return DEFAULT_ATTACK_IDEAS_BY_FAMILY[familyId] || DEFAULT_ATTACK_IDEAS;
+}
 
 export const GAME_CONTEXT_DETAILS = `
 GAME ENGINE DETAILS AND AVAILABLE VARIABLES:
@@ -110,16 +158,21 @@ export const ideaSchema = {
   required: ["attackIdeas", "accessoryIdeas"],
 };
 
-export function buildAttackSystemPrompt() {
+export function buildAttackSystemPrompt(attackFamilyId = DEFAULT_ATTACK_FAMILY) {
+  const family = getAttackFamilyConfig(attackFamilyId);
   return `
         You are a JavaScript code generator for a 2D stickman game. Your primary goal is to generate safe, runnable code in the provided JSON schema.
 
         CONSTRAINTS AND CONTEXT:
         ${GAME_CONTEXT_DETAILS}
         - JSON output must be perfectly structured.
+        - ACTIVE ATTACK FAMILY: ${family.label}
+        - FAMILY SUMMARY: ${family.summary}
+        - FAMILY EXAMPLES: ${family.examples.join(", ")}
         - Only produce combat attacks built around weapons, guns, cannons, staffs, blades, spells, beams, blasts, bombs, or summoned objects.
         - Reject body-move concepts like spin kicks, punches, wrestling moves, karate combos, acrobatics, and other full-character animation requests.
         - If the user asks for a body move, convert it into a visually similar combat tool. Example: "spinning kick" becomes an "energy chakram" or "whirlwind blade".
+        - Stay inside the active family. Do not drift into another family unless the user's wording is still clearly compatible with ${family.label}.
         - If the user requests a weapon, include its drawing code in 'requiredEquipmentDrawCode'.
 
         TASK: Return a single JSON OBJECT strictly adhering to the attackSchema. Use English comments for any complex parts.
@@ -141,16 +194,17 @@ export function buildAccessorySystemPrompt() {
         `;
 }
 
-export function buildIdeasPayload() {
+export function buildIdeasPayload(attackFamilyId = DEFAULT_ATTACK_FAMILY) {
+  const family = getAttackFamilyConfig(attackFamilyId);
   return {
     contents: [{
       parts: [{
-        text: "Generate 3 extremely short attack ideas and 3 simple accessory ideas suitable for a stickman fighting game. Attack ideas must be weapon-based, projectile-based, gadget-based, or magic-based. Do not suggest kicks, punches, wrestling moves, flips, or body-animation-heavy attacks. Ideas must be easy to translate into code.",
+        text: `Generate 3 extremely short ${family.label.toLowerCase()} attack ideas and 3 simple accessory ideas suitable for a stickman fighting game. Attack ideas must stay inside this family: ${family.summary} Do not suggest kicks, punches, wrestling moves, flips, or body-animation-heavy attacks. Ideas must be easy to translate into code.`,
       }],
     }],
     systemInstruction: {
       parts: [{
-        text: "You are a creative director for a stickman game. Provide a JSON object with creative ideas. Attack ideas must stay in the lane of swords, guns, cannons, magic spells, beams, bombs, staffs, drones, or summoned combat objects. Never propose kicks, punches, grapples, martial-arts combos, or animation-heavy body attacks. Use simple English phrases.",
+        text: `You are a creative director for a stickman game. Provide a JSON object with creative ideas. The active attack family is ${family.label}. Attack ideas must stay in that lane: ${family.summary} Never propose kicks, punches, grapples, martial-arts combos, or animation-heavy body attacks. Use simple English phrases.`,
       }],
     },
     generationConfig: {

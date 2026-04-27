@@ -1,12 +1,15 @@
 import { apiUrl } from "./env.js";
 import {
+    ATTACK_FAMILIES,
     accessorySchema,
     attackSchema,
     buildAccessorySystemPrompt,
     buildAttackSystemPrompt,
     buildIdeasPayload,
+    DEFAULT_ATTACK_FAMILY,
     DEFAULT_ACCESSORY_IDEAS,
-    DEFAULT_ATTACK_IDEAS,
+    getDefaultAttackIdeas,
+    getAttackFamilyConfig,
 } from "./ai-config.js";
 import { requestStructuredJson } from "./ai-client.js";
 
@@ -32,6 +35,8 @@ import { requestStructuredJson } from "./ai-client.js";
     const accessoryPromptInput = document.getElementById('accessory-prompt-input');
     const codeDisplayAttack = document.getElementById('code-display-attack');
     const codeDisplayAccessory = document.getElementById('code-display-accessory');
+    const attackFamilySelector = document.getElementById('attack-family-selector');
+    const attackFamilyDescription = document.getElementById('attack-family-description');
 
     
     // --- GAME CONSTANTS ---
@@ -70,8 +75,9 @@ import { requestStructuredJson } from "./ai-client.js";
     ];
 
     let isGeneratingCode = false;
-    let ideasHaveLoaded = false;
+    let ideasLoadedForFamily = null;
     let ideasAreLoading = false;
+    let selectedAttackFamily = DEFAULT_ATTACK_FAMILY;
 
     
     // --- MOUSE TRACKING ---
@@ -945,6 +951,45 @@ import { requestStructuredJson } from "./ai-client.js";
         const normalizedPrompt = promptText.toLocaleLowerCase('tr-TR');
         return unsupportedAttackKeywords.some((keyword) => normalizedPrompt.includes(keyword));
     }
+
+    function updateAttackFamilyUi() {
+        const activeFamily = getAttackFamilyConfig(selectedAttackFamily);
+        attackFamilyDescription.textContent = activeFamily.summary;
+        attackPromptInput.placeholder = `Example: ${activeFamily.examples[0]}`;
+
+        Array.from(attackFamilySelector.querySelectorAll('.family-button')).forEach((button) => {
+            button.classList.toggle('active', button.dataset.family === selectedAttackFamily);
+        });
+    }
+
+    function handleAttackFamilyChange(nextFamily) {
+        if (nextFamily === selectedAttackFamily) {
+            return;
+        }
+
+        selectedAttackFamily = nextFamily;
+        ideasLoadedForFamily = null;
+        updateAttackFamilyUi();
+        addMessage('System', `${getAttackFamilyConfig(nextFamily).label} family selected for new attacks.`, '#38bdf8');
+        fetchCreativeIdeas();
+    }
+
+    function renderAttackFamilySelector() {
+        attackFamilySelector.innerHTML = '';
+
+        ATTACK_FAMILIES.forEach((family) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'family-button';
+            button.dataset.family = family.id;
+            button.textContent = family.shortLabel;
+            button.title = family.summary;
+            button.addEventListener('click', () => handleAttackFamilyChange(family.id));
+            attackFamilySelector.appendChild(button);
+        });
+
+        updateAttackFamilyUi();
+    }
     
     // --- ACCESSORY RENDERING & REMOVAL ---
     // const codeDisplayAccessory = document.getElementById('code-display-accessory'); // Redundant const removed
@@ -1005,6 +1050,7 @@ import { requestStructuredJson } from "./ai-client.js";
         dynamicAttackFunction = defaultAttack;
         // SaldÄ±rÄ± ekipmanlarÄ±nÄ± kaldÄ±r
         currentAccessories = currentAccessories.filter(acc => !acc.isAttackEquipment);
+        renderAttackFamilySelector();
         renderAccessoryList();
         
         // const codeDisplayAttack = document.getElementById('code-display-attack'); // Redundant const removed
@@ -1029,6 +1075,7 @@ import { requestStructuredJson } from "./ai-client.js";
         if (isGamePaused) {
             pausePlayButton.textContent = 'Start Game';
             addMessage('System', 'Game paused. Controls are disabled.', '#3b82f6');
+            fetchCreativeIdeas();
         } else {
             pausePlayButton.textContent = 'Pause Game';
             addMessage('System', 'Game started. Have fun!', '#059669');
@@ -1130,6 +1177,7 @@ import { requestStructuredJson } from "./ai-client.js";
         // FIX: KarÅŸÄ±lÄ±klÄ± butonlarÄ± tekrar aktif et
         generateCodeAttackButton.disabled = false;
         generateCodeAccessoryButton.disabled = false;
+        fetchCreativeIdeas();
         
         if (responseText) {
             
@@ -1373,7 +1421,7 @@ import { requestStructuredJson } from "./ai-client.js";
         const attackIdeasList = document.getElementById('attack-ideas-list');
         const accessoryIdeasList = document.getElementById('accessory-ideas-list');
 
-        if (!forceRefresh && (ideasHaveLoaded || ideasAreLoading || isGeneratingCode || !isGamePaused)) {
+        if (!forceRefresh && (ideasLoadedForFamily === selectedAttackFamily || ideasAreLoading || isGeneratingCode || !isGamePaused)) {
             return;
         }
 
@@ -1385,7 +1433,7 @@ import { requestStructuredJson } from "./ai-client.js";
 
         let ideas = null;
         try {
-            const result = await requestStructuredJson(apiUrl, buildIdeasPayload());
+            const result = await requestStructuredJson(apiUrl, buildIdeasPayload(selectedAttackFamily));
             ideas = result.data;
         } catch (error) {
             console.error("Idea loading error:", error);
@@ -1395,11 +1443,11 @@ import { requestStructuredJson } from "./ai-client.js";
             renderIdeas(ideas.attackIdeas, 'attack-ideas-list', attackPromptInput);
             renderIdeas(ideas.accessoryIdeas, 'accessory-ideas-list', accessoryPromptInput);
         } else {
-            renderIdeas(DEFAULT_ATTACK_IDEAS, 'attack-ideas-list', attackPromptInput);
+            renderIdeas(getDefaultAttackIdeas(selectedAttackFamily), 'attack-ideas-list', attackPromptInput);
             renderIdeas(DEFAULT_ACCESSORY_IDEAS, 'accessory-ideas-list', accessoryPromptInput);
         }
 
-        ideasHaveLoaded = true;
+        ideasLoadedForFamily = selectedAttackFamily;
         ideasAreLoading = false;
     }
 
@@ -1410,7 +1458,14 @@ import { requestStructuredJson } from "./ai-client.js";
     // const codeDisplayAttack = document.getElementById('code-display-attack'); // Redundant const removed
 
     generateCodeAttackButton.addEventListener('click', () => {
-        generateCode(attackPromptInput, codeDisplayAttack, generateCodeAttackButton, 'attack', buildAttackSystemPrompt(), 'Attack code generated and loaded successfully. Try it with left click.');
+        generateCode(
+            attackPromptInput,
+            codeDisplayAttack,
+            generateCodeAttackButton,
+            'attack',
+            buildAttackSystemPrompt(selectedAttackFamily),
+            'Attack code generated and loaded successfully. Try it with left click.',
+        );
     });
 
 
