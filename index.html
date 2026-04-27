@@ -16,39 +16,28 @@
         <p class="eyebrow">AI Sandbox Arena</p>
         <h1>Stickman Arena</h1>
       </div>
-      <p class="topbar-copy">Build a combat style on the left, launch the match in the center, and use the right side for optional gear plus live debugging.</p>
+      <div class="topbar-badge">Combat sandbox</div>
     </header>
-
-    <section class="intro-strip">
-      <div class="intro-card intro-card-primary">
-        <p class="intro-label">Start Here</p>
-        <p class="intro-text">Choose an <strong>attack family</strong>, generate one attack, then press <strong>Start Match</strong> to test it immediately.</p>
-      </div>
-      <div class="intro-card">
-        <p class="intro-label">Optional</p>
-        <p class="intro-text">Accessories are cosmetic support pieces. The core loop is family, attack, start, test, refine.</p>
-      </div>
-    </section>
 
     <div class="arena-layout">
       <aside class="side-column">
         <section id="attack-panel" class="panel attack-container">
           <div class="panel-heading">
             <p class="panel-kicker">Left Loadout</p>
-            <h2 class="attack-header">Dynamic Attack Generation</h2>
+            <h2 class="attack-header">Attack Lab</h2>
           </div>
           <div class="family-block">
-            <div class="ideas-title">Attack Family</div>
+            <div class="ideas-title">Family</div>
             <div id="attack-family-selector" class="family-selector"></div>
             <p id="attack-family-description" class="family-description"></p>
           </div>
-          <textarea id="attack-prompt-input" rows="4" placeholder="Example: green light sword" maxlength="300"></textarea>
-          <button id="generate-attack-code">Generate and Load Attack</button>
+          <textarea id="attack-prompt-input" rows="3" placeholder="Example: green light sword" maxlength="300"></textarea>
+          <button id="generate-attack-code">Generate Attack</button>
           <button id="reset-attack-button">Reset Attack</button>
           <div id="code-display-attack">Loaded code: default knockback attack.</div>
 
           <div class="ideas-block">
-            <div class="ideas-title">Creative Attack Ideas</div>
+            <div class="ideas-title">Ideas</div>
             <div id="attack-ideas-list" class="idea-list">
               <span class="idea-placeholder">Loading ideas...</span>
             </div>
@@ -60,18 +49,18 @@
         <section class="panel arena-panel">
           <div class="coach-panel" id="coach-panel">
             <div class="coach-copy">
-              <p id="coach-kicker" class="coach-kicker">Step 1 of 4</p>
+              <p id="coach-kicker" class="coach-kicker">Step 1</p>
               <h2 id="coach-title" class="coach-title">Choose an attack family</h2>
-              <p id="coach-body" class="coach-body">Start on the left. Pick a family, click an idea or type your own prompt, then generate one attack.</p>
+              <p id="coach-body" class="coach-body">Pick a family, generate one attack, then start the match.</p>
             </div>
             <div id="coach-status" class="coach-status">Setup Mode</div>
           </div>
 
           <div class="step-rail">
             <button type="button" class="step-chip" data-step-id="family">1 Family</button>
-            <button type="button" class="step-chip" data-step-id="attack">2 Generate</button>
-            <button type="button" class="step-chip" data-step-id="start">3 Start Match</button>
-            <button type="button" class="step-chip" data-step-id="fight">4 Test It</button>
+            <button type="button" class="step-chip" data-step-id="attack">2 Build</button>
+            <button type="button" class="step-chip" data-step-id="start">3 Start</button>
+            <button type="button" class="step-chip" data-step-id="fight">4 Test</button>
           </div>
 
           <div class="arena-toolbar">
@@ -89,8 +78,7 @@
 
           <div class="arena-frame" id="arena-stage">
             <div class="arena-frame-label">
-              <span class="arena-label">Arena Preview</span>
-              <span class="arena-tip">Bright VFX are tuned to stay readable on this light arena.</span>
+              <span class="arena-label">Arena</span>
             </div>
             <canvas id="gameCanvas" width="800" height="450"></canvas>
             <div
@@ -103,8 +91,7 @@
           </div>
 
           <div class="controls">
-            <p><strong>Move:</strong> A (Left), D (Right), W (Jump)</p>
-            <p><strong>Attack:</strong> Left Mouse Click after the match starts</p>
+            <p><strong>Move</strong> A D W <span class="controls-dot">/</span> <strong>Fire</strong> click</p>
           </div>
         </section>
       </main>
@@ -113,14 +100,14 @@
         <section id="accessory-panel" class="panel accessory-container">
           <div class="panel-heading">
             <p class="panel-kicker">Right Loadout</p>
-            <h2 class="accessory-header">Dynamic Accessory Generation</h2>
+            <h2 class="accessory-header">Gear Lab</h2>
           </div>
-          <textarea id="accessory-prompt-input" rows="4" placeholder="Example: sunglasses" maxlength="300"></textarea>
-          <button id="generate-accessory-code">Generate and Load Accessory</button>
+          <textarea id="accessory-prompt-input" rows="3" placeholder="Example: sunglasses" maxlength="300"></textarea>
+          <button id="generate-accessory-code">Generate Gear</button>
           <div id="code-display-accessory">Loaded accessories: none.</div>
 
           <div class="ideas-block">
-            <div class="ideas-title">Creative Accessory Ideas</div>
+            <div class="ideas-title">Gear Ideas</div>
             <div id="accessory-ideas-list" class="idea-list">
               <span class="idea-placeholder">Loading ideas...</span>
             </div>

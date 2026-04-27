@@ -115,6 +115,7 @@ import { requestStructuredJson } from "./ai-client.js";
     let projectiles = [];
     window.projectiles = projectiles; // FIX: Mermi dizisini global olarak eriÅŸilebilir yap
     let particles = []; // YENÄ°: PartikÃ¼l dizisi
+    let currentProjectileOwner = null;
     
     // --- AI SaldÄ±rÄ± FonksiyonlarÄ± (AI'nÄ±n Kendi SaldÄ±rÄ± MantÄ±ÄŸÄ±) ---
     // AI Temel SaldÄ±rÄ±: Basit mermi fÄ±rlatma
@@ -129,9 +130,14 @@ import { requestStructuredJson } from "./ai-client.js";
         const color = ai.color; // KÄ±rmÄ±zÄ±
         const drawCode = "ctx.fillStyle=color; ctx.beginPath(); ctx.arc(x, y, size, 0, 2*Math.PI); ctx.fill();";
         
-        spawnProjectile(handRX, handRY, vx, vy, 10, size, color, drawCode, 
-            "p.x += p.vx; p.y += p.vy;"
-        );
+        currentProjectileOwner = ai;
+        try {
+            spawnProjectile(handRX, handRY, vx, vy, 10, size, color, drawCode,
+                "p.x += p.vx; p.y += p.vy;"
+            );
+        } finally {
+            currentProjectileOwner = null;
+        }
     };
 
     // AI Ã–zel SaldÄ±rÄ±: Daha gÃ¼Ã§lÃ¼, yavaÅŸ mermi (Can Ã‡alma Efekti iÃ§in)
@@ -146,10 +152,15 @@ import { requestStructuredJson } from "./ai-client.js";
         const color = '#8A2BE2'; // Mor
         const drawCode = "ctx.fillStyle=color; ctx.shadowBlur=15; ctx.shadowColor=color; ctx.beginPath(); ctx.fillRect(x-size, y-size, size*2, size*2); ctx.fill(); ctx.shadowBlur=0;";
         
-        spawnProjectile(handRX, handRY, vx, vy, 15, size, color, drawCode, 
-            // Mor bÃ¼yÃ¼ yavaÅŸ hareket eder ve yavaÅŸÃ§a yukarÄ± doÄŸru ivmelenir (BÃ¼yÃ¼ Efekti)
-            "p.vx *= 0.99; p.vy *= 0.99; p.vy -= 0.1; p.x += p.vx; p.y += p.vy;"
-        );
+        currentProjectileOwner = ai;
+        try {
+            spawnProjectile(handRX, handRY, vx, vy, 15, size, color, drawCode,
+                // Mor bÃ¼yÃ¼ yavaÅŸ hareket eder ve yavaÅŸÃ§a yukarÄ± doÄŸru ivmelenir (BÃ¼yÃ¼ Efekti)
+                "p.vx *= 0.99; p.vy *= 0.99; p.vy -= 0.1; p.x += p.vx; p.y += p.vy;"
+            );
+        } finally {
+            currentProjectileOwner = null;
+        }
     };
 
     let selectedDifficulty = 'easy'; // BaÅŸlangÄ±Ã§ zorluk seviyesi
@@ -163,7 +174,7 @@ import { requestStructuredJson } from "./ai-client.js";
          * @param {string} drawCode Merminin nasÄ±l Ã§izileceÄŸini belirleyen saf Canvas kodu (x, y, size, color'a eriÅŸir)
          * @param {string} behaviorCode Merminin update mantÄ±ÄŸÄ±nÄ± belirleyen saf JS kodu (p, player, opponent, GRAVITY, FLOOR_Y'a eriÅŸir)
          */
-        constructor(x, y, vx, vy, damage, size = 5, color = '#000000', drawCode = null, behaviorCode = null) {
+        constructor(x, y, vx, vy, damage, size = 5, color = '#000000', drawCode = null, behaviorCode = null, owner = null) {
             this.x = x;
             this.y = y;
             this.vx = vx;
@@ -173,6 +184,11 @@ import { requestStructuredJson } from "./ai-client.js";
             this.color = color;
             this.isAlive = true;
             this.drawCode = drawCode; 
+            this.owner = owner;
+            this.ageFrames = 0;
+            this.armFrames = 2;
+            this.spawnGraceFrames = 10;
+            this.ownerSafeRadius = Math.max(size * 2.2, owner ? owner.headRadius * 2.2 : 0, 28);
             
             this.customUpdate = null;
             if (behaviorCode && behaviorCode.length > 0) {
@@ -188,6 +204,7 @@ import { requestStructuredJson } from "./ai-client.js";
 
         update() {
             if (!this.isAlive) return;
+            this.ageFrames += 1;
             
             if (this.customUpdate) { // Execute custom logic
                 try {
@@ -203,7 +220,7 @@ import { requestStructuredJson } from "./ai-client.js";
             }
             
             // Basit mermi Ã¶mrÃ¼/sÄ±nÄ±r kontrolÃ¼ (Ekran dÄ±ÅŸÄ±na Ã§Ä±kanlarÄ± kaldÄ±r)
-            if (this.x < 0 || this.x > canvas.width || this.y > FLOOR_Y || this.y < 0) {
+            if (this.ageFrames > 1 && (this.x < 0 || this.x > canvas.width || this.y > FLOOR_Y || this.y < 0)) {
                 this.isAlive = false;
             }
         }
@@ -293,7 +310,7 @@ import { requestStructuredJson } from "./ai-client.js";
      * @param {string} behaviorCode Ã–zel davranÄ±ÅŸ kodu (Opsiyonel)
      */
     function spawnProjectile(startX, startY, vx, vy, damage, size = 5, color = '#000000', drawCode = '', behaviorCode = '') {
-        const newProjectile = new Projectile(startX, startY, vx, vy, damage, size, color, drawCode, behaviorCode);
+        const newProjectile = new Projectile(startX, startY, vx, vy, damage, size, color, drawCode, behaviorCode, currentProjectileOwner);
         projectiles.push(newProjectile);
         // addMessage('Sistem', `Mermi fÄ±rlatÄ±ldÄ±!`, '#ff6600'); // Debug
     }
@@ -410,7 +427,12 @@ import { requestStructuredJson } from "./ai-client.js";
             console.log("performAttack called, executing dynamicAttackFunction."); // DEBUG LOG
             const opponent = this.isPlayer ? computer : player;
             // Dinamik saldÄ±rÄ± fonksiyonunu mouseX ve mouseY ile Ã§aÄŸÄ±r
-            dynamicAttackFunction(this, opponent, ctx, canvas, mouseX, mouseY);
+            currentProjectileOwner = this;
+            try {
+                dynamicAttackFunction(this, opponent, ctx, canvas, mouseX, mouseY);
+            } finally {
+                currentProjectileOwner = null;
+            }
         }
 
         takeDamage(amount) {
@@ -1025,17 +1047,17 @@ import { requestStructuredJson } from "./ai-client.js";
 
     function updateCoachState() {
         let activeStep = 'family';
-        let title = 'Choose an attack family';
-        let body = 'Start on the left. Pick a family, click an idea or type your own prompt, then generate one attack. Accessories are optional.';
-        let kicker = 'Step 1 of 4';
+        let title = 'Choose a family and build one attack';
+        let body = 'Pick a family, generate one attack, then start the match.';
+        let kicker = 'Step 1';
         let status = 'Setup Mode';
         let targets = ['attack-panel', 'generate-attack-code'];
 
         if (isGeneratingCode) {
             activeStep = 'attack';
             title = 'Generating your loadout';
-            body = 'The game stays paused while the AI assembles your attack or accessory. Watch the debug panel if anything fails.';
-            kicker = 'Step 2 of 4';
+            body = 'The match is paused while the loadout is being built.';
+            kicker = 'Step 2';
             status = 'Generating';
             targets = ['attack-panel', 'accessory-panel'];
         } else if (!hasCustomAttackLoaded()) {
@@ -1043,15 +1065,15 @@ import { requestStructuredJson } from "./ai-client.js";
         } else if (isGamePaused) {
             activeStep = 'start';
             title = 'Start the match';
-            body = 'Your attack is loaded. Press Start Match, then move with A, D, W and left click to test the attack in the arena.';
-            kicker = 'Step 3 of 4';
+            body = 'Your attack is loaded. Press Start Match and test it.';
+            kicker = 'Step 3';
             status = 'Ready';
             targets = ['pause-play-button', 'gameCanvas'];
         } else {
             activeStep = 'fight';
-            title = 'Fight, test, and refine';
-            body = 'The match is live. Left click to attack, then pause when you want to switch family, regenerate the move, or tweak accessories.';
-            kicker = 'Step 4 of 4';
+            title = 'Fight now, pause to rebuild';
+            body = 'Attack live, then pause to swap family or regenerate.';
+            kicker = 'Step 4';
             status = 'Live Match';
             targets = ['pause-play-button', 'gameCanvas'];
         }
@@ -1555,6 +1577,25 @@ import { requestStructuredJson } from "./ai-client.js";
         generateCode(accessoryPromptInput, codeDisplayAccessory, generateCodeAccessoryButton, 'accessory', buildAccessorySystemPrompt(), 'Accessory code generated and loaded successfully. Check your character.');
     });
 
+    function canProjectileHitTarget(projectile, target) {
+        if (!projectile.isAlive || !target.isAlive) {
+            return false;
+        }
+
+        if (projectile.ageFrames <= projectile.armFrames) {
+            return false;
+        }
+
+        if (projectile.owner === target) {
+            const dxOwner = projectile.x - target.x;
+            const dyOwner = projectile.y - target.head.y;
+            const ownerDistanceSq = dxOwner * dxOwner + dyOwner * dyOwner;
+            return projectile.ageFrames > projectile.spawnGraceFrames && ownerDistanceSq > projectile.ownerSafeRadius * projectile.ownerSafeRadius;
+        }
+
+        return true;
+    }
+
 
     // --- GAME LOOP ---
     let animationFrameId; // Animasyon Ã§erÃ§evesi ID'sini saklamak iÃ§in
@@ -1599,20 +1640,37 @@ import { requestStructuredJson } from "./ai-client.js";
         projectiles = projectiles.filter(p => p.isAlive); // Ã–lÃ¼ mermileri filtrele
         projectiles.forEach(p => {
             p.update();
-            
-            // Ã‡arpÄ±ÅŸma kontrolÃ¼ (Basit daire Ã§arpÄ±ÅŸmasÄ±) - Hedef Computer
-            const dx = p.x - computer.x;
-            const dy = p.y - computer.head.y; // Hedefi kafanÄ±n merkezine al
-            const distanceSq = dx * dx + dy * dy;
-            const collisionDistSq = (p.size + computer.headRadius) * (p.size + computer.headRadius);
 
-            if (p.isAlive && distanceSq < collisionDistSq && computer.isAlive) {
-                computer.takeDamage(p.damage);
-                computer.vx += (p.vx > 0 ? 1 : -1) * 5; // Hafif geri itme
-                p.isAlive = false; // Mermiyi yok et
-                
-                // VuruÅŸta partikÃ¼l efekti
-                spawnParticleEffect(p.x, p.y, 15, p.color, 6, 10, 0.4);
+            const collisionTargets =
+                p.owner === player ? [computer] :
+                p.owner === computer ? [player] :
+                [computer];
+
+            collisionTargets.forEach((target) => {
+                if (!canProjectileHitTarget(p, target)) {
+                    return;
+                }
+
+                const dx = p.x - target.x;
+                const dy = p.y - target.head.y;
+                const distanceSq = dx * dx + dy * dy;
+                const collisionDistSq = (p.size + target.headRadius) * (p.size + target.headRadius);
+
+                if (p.isAlive && distanceSq < collisionDistSq) {
+                    target.takeDamage(p.damage);
+                    target.vx += (p.vx > 0 ? 1 : -1) * 5;
+                    p.isAlive = false;
+                    spawnParticleEffect(p.x, p.y, 15, p.color, 6, 10, 0.4);
+                }
+            });
+
+            if (p.isAlive && p.owner && p.ageFrames <= p.spawnGraceFrames) {
+                const dxOwner = p.x - p.owner.x;
+                const dyOwner = p.y - p.owner.head.y;
+                const ownerDistanceSq = dxOwner * dxOwner + dyOwner * dyOwner;
+                if (ownerDistanceSq < p.ownerSafeRadius * p.ownerSafeRadius) {
+                    return;
+                }
             }
         });
 
