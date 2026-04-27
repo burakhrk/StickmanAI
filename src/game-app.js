@@ -1281,7 +1281,14 @@ import { requestStructuredJson } from "./ai-client.js";
             
             if (schemaType === 'accessory') {
                 // --- Aksesuar Ä°ÅŸleme MantÄ±ÄŸÄ± (JSON ARRAY) ---
-                const accessoriesToProcess = Array.isArray(responseText) ? responseText : [responseText]; 
+                const accessoryPayload = Array.isArray(responseText)
+                    ? { accessories: responseText }
+                    : responseText;
+                const accessoriesToProcess = Array.isArray(accessoryPayload?.accessories)
+                    ? accessoryPayload.accessories
+                    : accessoryPayload?.javascriptCode && accessoryPayload?.targetLocation
+                        ? [accessoryPayload]
+                    : [];
 
                 let accessoriesAdded = 0;
                 

@@ -120,26 +120,33 @@ export const attackSchema = {
 };
 
 export const accessorySchema = {
-  type: "ARRAY",
-  description: "Returns an array of accessory objects.",
-  items: {
-    type: "OBJECT",
-    properties: {
-      targetLocation: {
-        type: "STRING",
-        description: "Valid values: head, head_top, eyes, neck, hand, wrist, torso, back, foot.",
-      },
-      description: {
-        type: "STRING",
-        description: "Short summary of the requested accessory.",
-      },
-      javascriptCode: {
-        type: "STRING",
-        description: "Return only the JavaScript canvas function body using player, ctx, x, y, angle, scale.",
+  type: "OBJECT",
+  description: "Returns an object containing an accessories array.",
+  properties: {
+    accessories: {
+      type: "ARRAY",
+      description: "Array of accessory objects.",
+      items: {
+        type: "OBJECT",
+        properties: {
+          targetLocation: {
+            type: "STRING",
+            description: "Valid values: head, head_top, eyes, neck, hand, wrist, torso, back, foot.",
+          },
+          description: {
+            type: "STRING",
+            description: "Short summary of the requested accessory.",
+          },
+          javascriptCode: {
+            type: "STRING",
+            description: "Return only the JavaScript canvas function body using player, ctx, x, y, angle, scale.",
+          },
+        },
+        required: ["targetLocation", "javascriptCode"],
       },
     },
-    required: ["targetLocation", "javascriptCode"],
   },
+  required: ["accessories"],
 };
 
 export const ideaSchema = {
@@ -192,7 +199,7 @@ export function buildAccessorySystemPrompt() {
         - Target Locations: 'head', 'head_top', 'eyes', 'neck', 'hand', 'wrist', 'torso', 'back', 'foot'.
         - Use shadows, highlights, and rich colors where appropriate.
 
-        TASK: Return a JSON ARRAY strictly adhering to the accessorySchema. Use English comments for any complex parts.
+        TASK: Return a single JSON OBJECT strictly adhering to the accessorySchema. Put all generated items inside the 'accessories' array. Use English comments for any complex parts.
         `;
 }
 
