@@ -232,10 +232,14 @@ import { requestStructuredJson } from "./ai-client.js";
             if (this.drawCode && this.drawCode.length > 0) {
                  // Dinamik Ã§izim kodu (AI tarafÄ±ndan tanÄ±mlanÄ±rsa)
                  try {
-                    // YENÄ°: player ve computer nesneleri de Ã§izim koduna geÃ§irilir
-                    const func = new Function('ctx', 'x', 'y', 'size', 'color', 'player', 'computer', this.drawCode);
-                    // Koda merminin mevcut konumu, boyutu, rengi ve global oyun nesneleri gÃ¶nderilir.
-                    func(ctx, this.x, this.y, this.size, this.color, player, computer);
+                    // Draw code can use x/y/size/color directly or access the full projectile as `p`.
+                    const opponent =
+                        this.owner === player ? computer :
+                        this.owner === computer ? player :
+                        computer;
+                    const func = new Function('ctx', 'x', 'y', 'size', 'color', 'player', 'computer', 'opponent', 'p', this.drawCode);
+                    // Koda merminin mevcut konumu, boyutu, rengi ve global oyun nesneleri gonderilir.
+                    func(ctx, this.x, this.y, this.size, this.color, player, computer, opponent, this);
                  } catch(e) {
                      console.error("Projectile draw error:", e);
                      this.isAlive = false; // Hata veren mermiyi kaldÄ±r
