@@ -16,12 +16,23 @@
         <p class="eyebrow">AI Sandbox Arena</p>
         <h1>Stickman Arena</h1>
       </div>
-      <p class="topbar-copy">Build ridiculous attacks, test accessories, and watch live debug feedback without leaving the arena view.</p>
+      <p class="topbar-copy">Build a combat style on the left, launch the match in the center, and use the right side for optional gear plus live debugging.</p>
     </header>
+
+    <section class="intro-strip">
+      <div class="intro-card intro-card-primary">
+        <p class="intro-label">Start Here</p>
+        <p class="intro-text">Choose an <strong>attack family</strong>, generate one attack, then press <strong>Start Match</strong> to test it immediately.</p>
+      </div>
+      <div class="intro-card">
+        <p class="intro-label">Optional</p>
+        <p class="intro-text">Accessories are cosmetic support pieces. The core loop is family, attack, start, test, refine.</p>
+      </div>
+    </section>
 
     <div class="arena-layout">
       <aside class="side-column">
-        <section class="panel attack-container">
+        <section id="attack-panel" class="panel attack-container">
           <div class="panel-heading">
             <p class="panel-kicker">Left Loadout</p>
             <h2 class="attack-header">Dynamic Attack Generation</h2>
@@ -47,6 +58,22 @@
 
       <main class="arena-column">
         <section class="panel arena-panel">
+          <div class="coach-panel" id="coach-panel">
+            <div class="coach-copy">
+              <p id="coach-kicker" class="coach-kicker">Step 1 of 4</p>
+              <h2 id="coach-title" class="coach-title">Choose an attack family</h2>
+              <p id="coach-body" class="coach-body">Start on the left. Pick a family, click an idea or type your own prompt, then generate one attack.</p>
+            </div>
+            <div id="coach-status" class="coach-status">Setup Mode</div>
+          </div>
+
+          <div class="step-rail">
+            <button type="button" class="step-chip" data-step-id="family">1 Family</button>
+            <button type="button" class="step-chip" data-step-id="attack">2 Generate</button>
+            <button type="button" class="step-chip" data-step-id="start">3 Start Match</button>
+            <button type="button" class="step-chip" data-step-id="fight">4 Test It</button>
+          </div>
+
           <div class="arena-toolbar">
             <div id="difficulty-selector">
               <button class="difficulty-button easy selected" data-difficulty="easy">Easy</button>
@@ -55,12 +82,16 @@
             </div>
 
             <div class="ui-buttons-container">
-              <button id="pause-play-button">Start Game</button>
-              <button id="restart-button">Restart Game</button>
+              <button id="pause-play-button">Start Match</button>
+              <button id="restart-button">Reset Match</button>
             </div>
           </div>
 
-          <div class="arena-frame">
+          <div class="arena-frame" id="arena-stage">
+            <div class="arena-frame-label">
+              <span class="arena-label">Arena Preview</span>
+              <span class="arena-tip">Bright VFX are tuned to stay readable on this light arena.</span>
+            </div>
             <canvas id="gameCanvas" width="800" height="450"></canvas>
             <div
               id="loading-overlay"
@@ -72,14 +103,14 @@
           </div>
 
           <div class="controls">
-            <p><strong>Player 1 Controls:</strong> A (Left), D (Right), W (Jump)</p>
-            <p><strong>Attack:</strong> Left Mouse Click</p>
+            <p><strong>Move:</strong> A (Left), D (Right), W (Jump)</p>
+            <p><strong>Attack:</strong> Left Mouse Click after the match starts</p>
           </div>
         </section>
       </main>
 
       <aside class="side-column side-column-right">
-        <section class="panel accessory-container">
+        <section id="accessory-panel" class="panel accessory-container">
           <div class="panel-heading">
             <p class="panel-kicker">Right Loadout</p>
             <h2 class="accessory-header">Dynamic Accessory Generation</h2>

@@ -91,6 +91,8 @@ GAME ENGINE DETAILS AND AVAILABLE VARIABLES:
     - If a weapon is required, fill in requiredEquipmentDrawCode.
     - Do not redeclare the scale variable.
     - Use shadows, glow, and rich colors where appropriate.
+    - The arena backdrop is light ivory, so avoid pale white, faint yellow, or washed-out pastel effects unless they include a darker outline, shadow, or saturated glow.
+    - Favor high-contrast colors that stay readable on a bright stage.
 `;
 
 export const attackSchema = {

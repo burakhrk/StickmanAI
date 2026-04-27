@@ -37,6 +37,11 @@ import { requestStructuredJson } from "./ai-client.js";
     const codeDisplayAccessory = document.getElementById('code-display-accessory');
     const attackFamilySelector = document.getElementById('attack-family-selector');
     const attackFamilyDescription = document.getElementById('attack-family-description');
+    const coachKicker = document.getElementById('coach-kicker');
+    const coachTitle = document.getElementById('coach-title');
+    const coachBody = document.getElementById('coach-body');
+    const coachStatus = document.getElementById('coach-status');
+    const stepChips = Array.from(document.querySelectorAll('.step-chip'));
 
     
     // --- GAME CONSTANTS ---
@@ -764,10 +769,11 @@ import { requestStructuredJson } from "./ai-client.js";
         
         // Oyun durumunu baÅŸlat
         isGamePaused = false;
-        pausePlayButton.textContent = 'Pause Game';
+        pausePlayButton.textContent = 'Pause Match';
         // Buton rengini sadece metin deÄŸiÅŸtirme durumunda ayarlÄ±yoruz, aksi halde CSS gradient kullanacak
         // pausePlayButton.style.backgroundColor = '#059669'; 
         addMessage('System', `Game restarted. Difficulty: ${selectedDifficulty.toUpperCase()}`, '#059669');
+        updateCoachState();
         requestAnimationFrame(gameLoop);
     }
 
@@ -970,6 +976,7 @@ import { requestStructuredJson } from "./ai-client.js";
         selectedAttackFamily = nextFamily;
         ideasLoadedForFamily = null;
         updateAttackFamilyUi();
+        updateCoachState();
         addMessage('System', `${getAttackFamilyConfig(nextFamily).label} family selected for new attacks.`, '#38bdf8');
         fetchCreativeIdeas();
     }
@@ -989,6 +996,72 @@ import { requestStructuredJson } from "./ai-client.js";
         });
 
         updateAttackFamilyUi();
+    }
+
+    function hasCustomAttackLoaded() {
+        return dynamicAttackFunction !== defaultAttack;
+    }
+
+    function setActiveTargets(targetIds) {
+        ['attack-panel', 'accessory-panel', 'pause-play-button', 'generate-attack-code', 'generate-accessory-code', 'gameCanvas']
+            .forEach((id) => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.classList.toggle('is-active-target', targetIds.includes(id));
+                }
+            });
+    }
+
+    function updateStepRail(activeStep) {
+        const order = ['family', 'attack', 'start', 'fight'];
+        const activeIndex = order.indexOf(activeStep);
+
+        stepChips.forEach((chip) => {
+            const stepIndex = order.indexOf(chip.dataset.stepId);
+            chip.classList.toggle('is-active-step', chip.dataset.stepId === activeStep);
+            chip.classList.toggle('is-complete-step', stepIndex !== -1 && activeIndex !== -1 && stepIndex < activeIndex);
+        });
+    }
+
+    function updateCoachState() {
+        let activeStep = 'family';
+        let title = 'Choose an attack family';
+        let body = 'Start on the left. Pick a family, click an idea or type your own prompt, then generate one attack. Accessories are optional.';
+        let kicker = 'Step 1 of 4';
+        let status = 'Setup Mode';
+        let targets = ['attack-panel', 'generate-attack-code'];
+
+        if (isGeneratingCode) {
+            activeStep = 'attack';
+            title = 'Generating your loadout';
+            body = 'The game stays paused while the AI assembles your attack or accessory. Watch the debug panel if anything fails.';
+            kicker = 'Step 2 of 4';
+            status = 'Generating';
+            targets = ['attack-panel', 'accessory-panel'];
+        } else if (!hasCustomAttackLoaded()) {
+            activeStep = 'family';
+        } else if (isGamePaused) {
+            activeStep = 'start';
+            title = 'Start the match';
+            body = 'Your attack is loaded. Press Start Match, then move with A, D, W and left click to test the attack in the arena.';
+            kicker = 'Step 3 of 4';
+            status = 'Ready';
+            targets = ['pause-play-button', 'gameCanvas'];
+        } else {
+            activeStep = 'fight';
+            title = 'Fight, test, and refine';
+            body = 'The match is live. Left click to attack, then pause when you want to switch family, regenerate the move, or tweak accessories.';
+            kicker = 'Step 4 of 4';
+            status = 'Live Match';
+            targets = ['pause-play-button', 'gameCanvas'];
+        }
+
+        coachKicker.textContent = kicker;
+        coachTitle.textContent = title;
+        coachBody.textContent = body;
+        coachStatus.textContent = status;
+        updateStepRail(activeStep);
+        setActiveTargets(targets);
     }
     
     // --- ACCESSORY RENDERING & REMOVAL ---
@@ -1056,6 +1129,7 @@ import { requestStructuredJson } from "./ai-client.js";
         // const codeDisplayAttack = document.getElementById('code-display-attack'); // Redundant const removed
         codeDisplayAttack.textContent = "Loaded code: default knockback attack.";
         addMessage('System', 'Attack mechanic reset to default. Your weapon was removed.', '#ef4444');
+        updateCoachState();
     }
 
     // FIX: resetAttack fonksiyonunu inline onclick iÃ§in global hale getir
@@ -1073,15 +1147,16 @@ import { requestStructuredJson } from "./ai-client.js";
 
         isGamePaused = !isGamePaused;
         if (isGamePaused) {
-            pausePlayButton.textContent = 'Start Game';
+            pausePlayButton.textContent = 'Start Match';
             addMessage('System', 'Game paused. Controls are disabled.', '#3b82f6');
             fetchCreativeIdeas();
         } else {
-            pausePlayButton.textContent = 'Pause Game';
+            pausePlayButton.textContent = 'Pause Match';
             addMessage('System', 'Game started. Have fun!', '#059669');
             // Oyun duraklatÄ±lmÄ±ÅŸken dÃ¶ngÃ¼ durduysa, tekrar baÅŸlat
             requestAnimationFrame(gameLoop); 
         }
+        updateCoachState();
     }
 
     pausePlayButton.addEventListener('click', togglePausePlay);
@@ -1111,6 +1186,7 @@ import { requestStructuredJson } from "./ai-client.js";
         // FIX: KarÅŸÄ±lÄ±klÄ± butonlarÄ± da deaktif et
         isGamePaused = true; 
         isGeneratingCode = true;
+        updateCoachState();
         
         // YENÄ°: YÃ¼kleme mesajÄ±nÄ± gÃ¼ncelle
         loadingOverlay.textContent = schemaType === 'attack' ? 'Generating attack...' : 'Generating accessory...';
@@ -1387,6 +1463,7 @@ import { requestStructuredJson } from "./ai-client.js";
             codeDisplayElement.textContent = 'Error: no response from the API.';
             addMessage('System', 'No response was received from the code generation API.', '#b91c1c');
         }
+        updateCoachState();
     }
 
     // --- IDEA RENDERING LOGIC (YENÄ°) ---
@@ -1566,7 +1643,8 @@ import { requestStructuredJson } from "./ai-client.js";
         // 8. Check for game end
         if (!player.isAlive || !computer.isAlive) {
              isGamePaused = true; // Oyunu bitir ve duraklat
-             pausePlayButton.textContent = 'GAME OVER (Restart)';
+             pausePlayButton.textContent = 'Play Again';
+             updateCoachState();
              // pausePlayButton.style.backgroundColor = '#dc2626'; // CSS gradient ile yapÄ±ldÄ±
 
              ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
@@ -1692,8 +1770,9 @@ import { requestStructuredJson } from "./ai-client.js";
         // Bu, pause ekranÄ±nÄ±n Ã§izilmesini saÄŸlar.
         gameLoop(); 
         renderAccessoryList(); // BoÅŸ listeyi ilk baÅŸta gÃ¶ster
-        addMessage('System', 'Game is paused. Press Start Game to begin.', '#888888');
+        addMessage('System', 'Game is paused. Press Start Match to begin.', '#888888');
         renderAttackFamilySelector();
+        updateCoachState();
         fetchCreativeIdeas(); // YaratÄ±cÄ± fikirleri yÃ¼kle
         
         // YENÄ°: Fikirleri 12 saniyede bir yenile
