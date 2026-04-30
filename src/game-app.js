@@ -1204,6 +1204,29 @@ import { requestStructuredJson } from "./ai-client.js";
     }
 
     // --- ATTACK RESET FUNCTION (YENÄ°) ---
+    const validationCanvas = document.createElement('canvas');
+    validationCanvas.width = canvas.width;
+    validationCanvas.height = canvas.height;
+    const validationCtx = validationCanvas.getContext('2d');
+
+    function validateAccessoryRenderer(renderer) {
+        if (!validationCtx) {
+            return null;
+        }
+
+        validationCtx.save();
+        try {
+            validationCtx.clearRect(0, 0, validationCanvas.width, validationCanvas.height);
+            renderer(player, validationCtx, player.x, player.y, 0, 1);
+            return null;
+        } catch (error) {
+            return error;
+        } finally {
+            validationCtx.restore();
+            validationCtx.clearRect(0, 0, validationCanvas.width, validationCanvas.height);
+        }
+    }
+
     function resetAttack(options = {}) {
         const { pauseGame = true, quiet = false } = options;
         const wasRunning = !isGamePaused;
@@ -1394,6 +1417,10 @@ import { requestStructuredJson } from "./ai-client.js";
                         try {
                              // Parametreler: player, ctx, x, y, angle, scale
                              const newFunc = new Function('player', 'ctx', 'x', 'y', 'angle', 'scale', rawCode);
+                             const validationError = validateAccessoryRenderer(newFunc);
+                             if (validationError) {
+                                 throw validationError;
+                             }
                              
                              const newAccessory = {
                                  id: 'acc_' + accessoryIdCounter++, // Benzersiz ID
@@ -1459,6 +1486,10 @@ import { requestStructuredJson } from "./ai-client.js";
                     try {
                         // Aksesuar kodu parametreleri: player, ctx, x, y, angle, scale
                         const newFunc = new Function('player', 'ctx', 'x', 'y', 'angle', 'scale', fixedDrawCode);
+                        const validationError = validateAccessoryRenderer(newFunc);
+                        if (validationError) {
+                            throw validationError;
+                        }
                         const newEquipment = {
                             id: 'att_eq_' + Date.now(),
                             description: attackDescription + " (Equipment)",

@@ -196,6 +196,7 @@ export function buildAccessorySystemPrompt() {
         ${GAME_CONTEXT_DETAILS}
         - Drawing Function Signature: (player, ctx, x, y, angle, scale).
         - 'scale' must be applied to all size and distance measurements.
+        - Declare every helper variable before first use. Never reference undeclared names.
         - Target Locations: 'head', 'head_top', 'eyes', 'neck', 'hand', 'wrist', 'torso', 'back', 'foot'.
         - Use shadows, highlights, and rich colors where appropriate.
 
