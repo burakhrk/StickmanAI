@@ -78,6 +78,7 @@ GAME ENGINE DETAILS AND AVAILABLE VARIABLES:
     - Use the PROJECTILE_BEHAVIOR_CODE constant.
     - Use handRX and handRY as the projectile origin.
     - Use only vx and vy for speed values.
+    - Declare every helper variable before first use. Never reference undeclared names.
     - Attacks must be weapon-based, gadget-based, projectile-based, or magic/spell-based.
     - Do NOT build melee choreography such as kicks, punches, spinning moves, flips, grapples, or body-animation-heavy martial arts attacks.
     - If the user asks for a physical move, reinterpret it as a themed weapon or spell attack instead of animating the whole body.

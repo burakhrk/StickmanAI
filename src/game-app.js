@@ -1231,6 +1231,70 @@ import { requestStructuredJson } from "./ai-client.js";
         }
     }
 
+    function createValidationFighter(baseFighter, isPlayerFighter, fallbackTarget) {
+        return {
+            x: baseFighter.x,
+            y: baseFighter.y,
+            vx: baseFighter.vx,
+            vy: baseFighter.vy,
+            ax: 0,
+            facing: baseFighter.facing,
+            onGround: baseFighter.onGround,
+            isPlayer: isPlayerFighter,
+            limbLength: baseFighter.limbLength,
+            torsoLength: baseFighter.torsoLength,
+            fullLegLength: baseFighter.fullLegLength,
+            headRadius: baseFighter.headRadius,
+            shoulder: { x: baseFighter.shoulder.x, y: baseFighter.shoulder.y },
+            head: { x: baseFighter.head.x, y: baseFighter.head.y },
+            takeDamage() {},
+            move() {},
+            opponent: fallbackTarget,
+        };
+    }
+
+    function validateAttackFunction(renderer) {
+        if (!validationCtx) {
+            return null;
+        }
+
+        const savedProjectiles = projectiles;
+        const savedParticles = particles;
+        const savedOwner = currentProjectileOwner;
+
+        const validationOpponentBase = createValidationFighter(computer, false, null);
+        const validationPlayer = createValidationFighter(player, true, validationOpponentBase);
+        const validationOpponent = createValidationFighter(computer, false, validationPlayer);
+        validationPlayer.opponent = validationOpponent;
+        validationOpponent.opponent = validationPlayer;
+
+        setProjectiles([]);
+        particles = [];
+        currentProjectileOwner = validationPlayer;
+
+        validationCtx.save();
+        try {
+            validationCtx.clearRect(0, 0, validationCanvas.width, validationCanvas.height);
+            renderer(
+                validationPlayer,
+                validationOpponent,
+                validationCtx,
+                validationCanvas,
+                validationOpponent.head.x,
+                validationOpponent.head.y,
+            );
+            return null;
+        } catch (error) {
+            return error;
+        } finally {
+            validationCtx.restore();
+            validationCtx.clearRect(0, 0, validationCanvas.width, validationCanvas.height);
+            setProjectiles(savedProjectiles);
+            particles = savedParticles;
+            currentProjectileOwner = savedOwner;
+        }
+    }
+
     function resetAttack(options = {}) {
         const { pauseGame = true, quiet = false } = options;
         const wasRunning = !isGamePaused;
@@ -1561,6 +1625,10 @@ import { requestStructuredJson } from "./ai-client.js";
                     
                     // mouseX ve mouseY parametrelerini ekledik
                     const newFunc = new Function('player', 'opponent', 'ctx', 'canvas', 'mouseX', 'mouseY', fullCode);
+                    const validationError = validateAttackFunction(newFunc);
+                    if (validationError) {
+                        throw validationError;
+                    }
                     dynamicAttackFunction = newFunc;
                     
                     // YENÄ°: SaldÄ±rÄ± UI'Ä±nÄ± gÃ¼ncelle (X ile kaldÄ±rma dahil)
