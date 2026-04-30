@@ -115,6 +115,10 @@ import { requestStructuredJson } from "./ai-client.js";
 
     // YENÄ°: Mermiler ve PartikÃ¼ller dizisi
     let projectiles = [];
+    function setProjectiles(nextProjectiles) {
+        projectiles = nextProjectiles;
+        window.projectiles = projectiles;
+    }
     window.projectiles = projectiles; // FIX: Mermi dizisini global olarak eriÅŸilebilir yap
     let particles = []; // YENÄ°: PartikÃ¼l dizisi
     let currentProjectileOwner = null;
@@ -810,7 +814,7 @@ import { requestStructuredJson } from "./ai-client.js";
         computer.vy = 0;
 
         // Mermileri ve PartikÃ¼lleri temizle
-        projectiles = [];
+        setProjectiles([]);
         particles = [];
         
         // Dinamik iÃ§eriÄŸi sÄ±fÄ±rla (SaldÄ±rÄ± ve Ekipmanlar)
@@ -823,7 +827,7 @@ import { requestStructuredJson } from "./ai-client.js";
         // pausePlayButton.style.backgroundColor = '#059669'; 
         addMessage('System', `Game restarted. Difficulty: ${selectedDifficulty.toUpperCase()}`, '#059669');
         updateCoachState();
-        requestAnimationFrame(gameLoop);
+        ensureGameLoopRunning();
     }
 
 
@@ -1276,7 +1280,7 @@ import { requestStructuredJson } from "./ai-client.js";
             pausePlayButton.textContent = 'Pause Match';
             addMessage('System', 'Game started. Have fun!', '#059669');
             // Oyun duraklatÄ±lmÄ±ÅŸken dÃ¶ngÃ¼ durduysa, tekrar baÅŸlat
-            requestAnimationFrame(gameLoop); 
+            ensureGameLoopRunning(); 
         }
         updateCoachState();
     }
@@ -1719,9 +1723,18 @@ import { requestStructuredJson } from "./ai-client.js";
 
 
     // --- GAME LOOP ---
-    let animationFrameId; // Animasyon Ã§erÃ§evesi ID'sini saklamak iÃ§in
+    let animationFrameId = null;
+
+    function ensureGameLoopRunning() {
+        if (animationFrameId !== null) {
+            return;
+        }
+
+        animationFrameId = requestAnimationFrame(gameLoop);
+    }
 
     function gameLoop() {
+        animationFrameId = null;
         // 1. Clear the canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -1743,7 +1756,7 @@ import { requestStructuredJson } from "./ai-client.js";
             ctx.textAlign = 'center';
             ctx.fillText('PAUSED', canvas.width / 2, canvas.height / 2);
             
-            animationFrameId = requestAnimationFrame(gameLoop); // Ã‡izimi gÃ¼ncellemeye devam et
+            ensureGameLoopRunning(); // Ã‡izimi gÃ¼ncellemeye devam et
             return;
         }
 
@@ -1758,7 +1771,7 @@ import { requestStructuredJson } from "./ai-client.js";
         updateComputerAI(); // YENÄ°: AI davranÄ±ÅŸÄ±nÄ± buraya taÅŸÄ±dÄ±k
         
         // 4.5. Update Projectiles and check collision (YENÄ°)
-        projectiles = projectiles.filter(p => p.isAlive); // Ã–lÃ¼ mermileri filtrele
+        setProjectiles(projectiles.filter(p => p.isAlive)); // ?l? mermileri filtrele
         projectiles.forEach(p => {
             p.update();
 
@@ -1835,12 +1848,12 @@ import { requestStructuredJson } from "./ai-client.js";
              ctx.fillText('GAME OVER!', canvas.width / 2, canvas.height / 2 - 30);
              ctx.fillText(winner, canvas.width / 2, canvas.height / 2 + 20);
              
-             animationFrameId = requestAnimationFrame(gameLoop); // Son ekranÄ± Ã§izmek iÃ§in devam et
+             ensureGameLoopRunning(); // Son ekranÄ± Ã§izmek iÃ§in devam et
              return; 
         }
 
         // 9. Request next frame
-        animationFrameId = requestAnimationFrame(gameLoop);
+        ensureGameLoopRunning();
     }
 
     // --- AI Logic (GeliÅŸtirilmiÅŸ) ---
@@ -1947,7 +1960,7 @@ import { requestStructuredJson } from "./ai-client.js";
         loadingOverlay.classList.add('hidden'); // BaÅŸlangÄ±Ã§ta gizle
         // Oyun otomatik baÅŸlamadÄ±ÄŸÄ± iÃ§in sadece bir kez gameLoop Ã§aÄŸrÄ±sÄ± yapÄ±lÄ±r
         // Bu, pause ekranÄ±nÄ±n Ã§izilmesini saÄŸlar.
-        gameLoop(); 
+        ensureGameLoopRunning(); 
         renderAccessoryList(); // BoÅŸ listeyi ilk baÅŸta gÃ¶ster
         addMessage('System', 'Game is paused. Press Start Match to begin.', '#888888');
         renderAttackFamilySelector();
