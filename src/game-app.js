@@ -11,6 +11,15 @@ import {
     getDefaultAttackIdeas,
     getAttackFamilyConfig,
 } from "./ai-config.js";
+import {
+    STANDARD_ATTACK_DAMAGE,
+    compileAttackSpec,
+    createAttackEquipmentRenderer,
+    describeAttackSpec,
+    drawStandardProjectile,
+    normalizeAttackSpec,
+    updateStandardProjectile,
+} from "./attack-dsl.js";
 import { requestStructuredJson } from "./ai-client.js";
 
 // --- API & GAME STATE SETUP ---
@@ -109,6 +118,7 @@ import { requestStructuredJson } from "./ai-client.js";
     };
 
     let dynamicAttackFunction = defaultAttack; // BaÅŸlangÄ±Ã§ta varsayÄ±lan saldÄ±rÄ±
+    let currentAttackSpec = null;
 
     // YENÄ°: Ã‡oklu Aksesuarlar Dizisi
     let currentAccessories = [];
@@ -201,9 +211,11 @@ import { requestStructuredJson } from "./ai-client.js";
                 Math.min(220, Math.max(26, 34 + size * 3 + launchSpeed * 9 + damage * 1.2))
             );
             this.stagnationFrames = Math.round(Math.max(18, Math.min(this.maxAgeFrames * 0.55, 80)));
+            this.visualSpec = drawCode && typeof drawCode === 'object' ? { ...drawCode } : null;
+            this.behaviorSpec = behaviorCode && typeof behaviorCode === 'object' ? { ...behaviorCode } : null;
             
             this.customUpdate = null;
-            if (behaviorCode && behaviorCode.length > 0) {
+            if (typeof behaviorCode === 'string' && behaviorCode.length > 0) {
                 try {
                     // p: mermi nesnesinin kendisi (this), player: P1, opponent: P2, GRAVITY: oyun sabiti, FLOOR_Y: zemin
                     this.customUpdate = new Function('p', 'player', 'opponent', 'GRAVITY', 'FLOOR_Y', behaviorCode);
@@ -220,7 +232,21 @@ import { requestStructuredJson } from "./ai-client.js";
             const previousX = this.x;
             const previousY = this.y;
             
-            if (this.customUpdate) { // Execute custom logic
+            if (this.behaviorSpec) {
+                const handled = updateStandardProjectile(this, {
+                    player,
+                    computer,
+                    GRAVITY,
+                    FLOOR_Y,
+                    canvas,
+                    spawnParticleEffect,
+                });
+
+                if (!handled) {
+                    this.x += this.vx;
+                    this.y += this.vy;
+                }
+            } else if (this.customUpdate) { // Execute custom logic
                 try {
                     this.customUpdate(this, player, computer, GRAVITY, FLOOR_Y);
                 } catch(e) {
@@ -256,7 +282,9 @@ import { requestStructuredJson } from "./ai-client.js";
             if (!this.isAlive) return;
             ctx.save();
             
-            if (this.drawCode && this.drawCode.length > 0) {
+            if (this.visualSpec) {
+                 drawStandardProjectile(ctx, this);
+            } else if (this.drawCode && this.drawCode.length > 0) {
                  // Dinamik Ã§izim kodu (AI tarafÄ±ndan tanÄ±mlanÄ±rsa)
                  try {
                     // Draw code can use x/y/size/color directly or access the full projectile as `p`.
@@ -1309,6 +1337,7 @@ import { requestStructuredJson } from "./ai-client.js";
         }
         // Dinamik saldÄ±rÄ± fonksiyonunu varsayÄ±lana ayarla
         dynamicAttackFunction = defaultAttack;
+        currentAttackSpec = null;
         // SaldÄ±rÄ± ekipmanlarÄ±nÄ± kaldÄ±r
         currentAccessories = currentAccessories.filter(acc => !acc.isAttackEquipment);
         renderAttackFamilySelector();
@@ -1406,12 +1435,12 @@ import { requestStructuredJson } from "./ai-client.js";
             responseSchema = attackSchema;
         }
         
-        let userQuery = `Generate the JavaScript code for the following description: ${promptText}`;
+        let userQuery = `Generate the requested output for the following description: ${promptText}`;
 
         if (schemaType === 'accessory') {
             userQuery = `The stickman currently has the following physical dimensions: ${JSON.stringify(contextData)}. Based on this context and the user's request: ${promptText}, generate the accessory code.`;
         } else if (schemaType === 'attack') {
-             userQuery = `Based on the user's request: ${promptText}, generate a weapon, projectile, gadget, or magic-based attack in the required JSON format. If the request sounds like a body move, reinterpret it as a combat tool instead of animating the full character body.`;
+             userQuery = `Based on the user's request: ${promptText}, generate a standardized combat attack DSL object. Use only weapon, projectile, gadget, summon, or magic behavior. If the request sounds like a body move, reinterpret it as a combat tool instead of animating the full character body.`;
         }
 
         const payload = {
@@ -1449,7 +1478,68 @@ import { requestStructuredJson } from "./ai-client.js";
         
         if (responseText) {
             
-            if (schemaType === 'accessory') {
+            if (schemaType === 'attack') {
+                try {
+                    const normalizedAttack = normalizeAttackSpec(responseText, selectedAttackFamily);
+                    const compiledAttack = compileAttackSpec(normalizedAttack, {
+                        spawnProjectile,
+                        spawnParticleEffect,
+                        FLOOR_Y,
+                        GRAVITY,
+                    });
+                    const validationError = validateAttackFunction(compiledAttack);
+                    if (validationError) {
+                        throw validationError;
+                    }
+
+                    currentAccessories = currentAccessories.filter(acc => !acc.isAttackEquipment);
+
+                    const equipmentRenderer = createAttackEquipmentRenderer(normalizedAttack);
+                    const equipmentValidationError = validateAccessoryRenderer(equipmentRenderer);
+                    if (equipmentValidationError) {
+                        throw equipmentValidationError;
+                    }
+
+                    currentAccessories.push({
+                        id: 'att_eq_' + Date.now(),
+                        description: normalizedAttack.description + " (Equipment)",
+                        code: equipmentRenderer,
+                        location: 'hand',
+                        isAttackEquipment: true,
+                    });
+
+                    currentAttackSpec = normalizedAttack;
+                    dynamicAttackFunction = compiledAttack;
+                    renderAccessoryList();
+
+                    const attackSummary = describeAttackSpec(normalizedAttack);
+                    codeDisplayElement.innerHTML = `
+                        <div class="accessory-item">
+                            <span style="font-weight: bold; color: #d97706;">ACTIVE ATTACK:</span>
+                            <span>${normalizedAttack.description}</span>
+                            <span class="remove-accessory" onclick="resetAttack()">Remove</span>
+                        </div>
+                        <div style="font-size: 0.8rem; color: #6b7280; margin-top: 5px;">Family: ${getAttackFamilyConfig(normalizedAttack.family).label} | Base damage: ${STANDARD_ATTACK_DAMAGE}</div>
+                        <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 4px;">${attackSummary}</div>
+                    `;
+
+                    addMessage('System', `Standardized attack loaded: ${attackSummary}.`, '#d97706');
+                    addMessage('System', `Attack gear loaded (${normalizedAttack.description}).`, '#d97706');
+                } catch (e) {
+                    codeDisplayElement.innerHTML = `
+                        <strong>ATTACK DSL ERROR:</strong><br>
+                        Error: ${e.message}<br>
+                        <br>
+                        <span class="debug-label">Returned attack payload:</span>
+                        <pre class="debug-code-section" style="color: #FFF; background-color: #b91c1c;">${JSON.stringify(responseText, null, 2)}</pre>
+                    `;
+                    addMessage('System', `The AI-generated attack spec is invalid. Error: ${e.message}`, '#b91c1c');
+                    currentAccessories = currentAccessories.filter(acc => !acc.isAttackEquipment);
+                    renderAccessoryList();
+                    currentAttackSpec = null;
+                    dynamicAttackFunction = defaultAttack;
+                }
+            } else if (schemaType === 'accessory') {
                 // --- Aksesuar Ä°ÅŸleme MantÄ±ÄŸÄ± (JSON ARRAY) ---
                 const accessoryPayload = Array.isArray(responseText)
                     ? { accessories: responseText }
@@ -1522,7 +1612,7 @@ import { requestStructuredJson } from "./ai-client.js";
                     codeDisplayElement.innerHTML = `<strong>Error:</strong> The API did not return valid accessory code. (0 items loaded)<br>Please check the console.`;
                     addMessage('System', 'The API returned a response without valid accessory code.', '#b91c1c');
                 }
-            } else if (schemaType === 'attack') {
+            } else if (schemaType === 'attack' && false) {
                 // --- SaldÄ±rÄ± Ä°ÅŸleme MantÄ±ÄŸÄ± (JSON OBJECT) ---
                 const attackData = responseText;
                 let drawCode = attackData.requiredEquipmentDrawCode || '';

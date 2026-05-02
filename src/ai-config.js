@@ -1,3 +1,11 @@
+import {
+  ATTACK_ACTION_TYPES,
+  ATTACK_DSL_FAMILIES,
+  ATTACK_PROJECTILE_KINDS,
+  ATTACK_PROJECTILE_PATTERNS,
+  ATTACK_WEAPON_KINDS,
+} from "./attack-dsl.js";
+
 export const DEFAULT_ATTACK_FAMILY = "blade";
 
 export const ATTACK_FAMILIES = [
@@ -61,63 +69,247 @@ export function getDefaultAttackIdeas(familyId = DEFAULT_ATTACK_FAMILY) {
 export const GAME_CONTEXT_DETAILS = `
 GAME ENGINE DETAILS AND AVAILABLE VARIABLES:
 
-1. CHARACTER OBJECTS ('player' and 'opponent'):
-    - CRITICAL PHYSICS VARIABLES: player.x, player.y, player.vx, player.vy.
-    - FORBIDDEN: Do not use names like 'velX', 'velY', or 'vel'. Only player.vx and player.vy are valid.
-    - OTHER: player.onGround, player.facing, player.takeDamage(amount), player.headRadius.
+1. ATTACK GENERATION MODE:
+    - Do NOT write raw JavaScript for attacks.
+    - Return a standardized attack DSL object that the game engine can interpret safely.
+    - Your job is to describe the attack using weaponVisual, castFx, and actions.
 
-2. GLOBAL CONSTANTS AND CONTEXT:
-    - ATTACK_DAMAGE: 10
-    - FLOOR_Y: 400, GRAVITY: 0.5
-    - Canvas/Mouse: ctx, canvas, mouseX, mouseY
-    - Projectile spawning: spawnProjectile(startX, startY, vx, vy, ATTACK_DAMAGE, size, color, drawCode, behaviorCode)
-    - Particle effect: spawnParticleEffect(x, y, count, color, size, maxSpeed, lifespan)
-
-3. ATTACK RULES:
-    - Scale projectile size and speed proportionally using player.headRadius.
-    - Use the PROJECTILE_BEHAVIOR_CODE constant.
-    - Use handRX and handRY as the projectile origin.
-    - Use only vx and vy for speed values.
-    - Declare every helper variable before first use. Never reference undeclared names.
+2. ATTACK STYLE RULES:
     - Attacks must be weapon-based, gadget-based, projectile-based, or magic/spell-based.
-    - Do NOT build melee choreography such as kicks, punches, spinning moves, flips, grapples, or body-animation-heavy martial arts attacks.
-    - If the user asks for a physical move, reinterpret it as a themed weapon or spell attack instead of animating the whole body.
+    - Do NOT build melee choreography such as kicks, punches, spinning moves, flips, grapples, or martial-arts combos.
+    - If the user asks for a body move, reinterpret it as a themed combat tool instead.
+    - Stay compact and game-like: choose 1 to 3 actions only.
 
-4. PROJECTILE BEHAVIOR CODE:
-    - This code can only access 'p', 'player', 'opponent', 'GRAVITY', and 'FLOOR_Y'.
-    - Projectile movement must use p.x += p.vx; and p.y += p.vy;.
+3. ACTION SYSTEM:
+    - Allowed action types: ${ATTACK_ACTION_TYPES.join(", ")}.
+    - Allowed projectile patterns: ${ATTACK_PROJECTILE_PATTERNS.join(", ")}.
+    - Allowed projectile visuals: ${ATTACK_PROJECTILE_KINDS.join(", ")}.
+    - Allowed weapon visuals: ${ATTACK_WEAPON_KINDS.join(", ")}.
+    - Use 'beam' only for line-based magic, laser, or rail attacks.
+    - Use 'projectiles' for everything else, with a fitting pattern.
 
-5. VISUAL CONSTRAINTS:
-    - Multiply all accessory sizes and offsets by scale.
-    - If a weapon is required, fill in requiredEquipmentDrawCode.
-    - Do not redeclare the scale variable.
-    - Use shadows, glow, and rich colors where appropriate.
-    - The arena backdrop is light ivory, so avoid pale white, faint yellow, or washed-out pastel effects unless they include a darker outline, shadow, or saturated glow.
+4. VISUAL CONSTRAINTS:
+    - The arena backdrop is light ivory, so avoid pale white, faint yellow, or washed-out pastel effects unless they include a darker outline or saturated glow.
     - Favor high-contrast colors that stay readable on a bright stage.
+    - Keep descriptions short and clean English.
 `;
 
 export const attackSchema = {
   type: "OBJECT",
-  description: "Returns a single structured attack object containing equipment draw logic and main attack execution logic.",
+  description: "Returns a single standardized attack definition object. No raw JavaScript is allowed for attacks.",
   properties: {
     description: {
       type: "STRING",
-      description: "The name or brief summary of the attack.",
+      description: "Short name or summary of the attack.",
     },
-    requiredEquipmentDrawCode: {
+    family: {
       type: "STRING",
-      description: "Optional JavaScript Canvas draw code for any required weapon or visual effect.",
+      enum: ATTACK_DSL_FAMILIES,
+      description: "Attack family lane for the generated attack.",
     },
-    projectileBehaviorCode: {
-      type: "STRING",
-      description: "Optional JavaScript code for custom projectile movement logic.",
+    palette: {
+      type: "OBJECT",
+      properties: {
+        primaryColor: {
+          type: "STRING",
+          description: "Main effect color in #RRGGBB format.",
+        },
+        accentColor: {
+          type: "STRING",
+          description: "Secondary highlight color in #RRGGBB format.",
+        },
+      },
+      required: ["primaryColor", "accentColor"],
     },
-    javascriptCode: {
-      type: "STRING",
-      description: "The main attack logic body. Use ATTACK_DAMAGE and spawnProjectile(...) when needed.",
+    weaponVisual: {
+      type: "OBJECT",
+      description: "Standardized visual metadata for the held weapon or focus object.",
+      properties: {
+        kind: {
+          type: "STRING",
+          enum: ATTACK_WEAPON_KINDS,
+          description: "Choose the closest weapon/focus visual.",
+        },
+        primaryColor: {
+          type: "STRING",
+          description: "Main weapon color in #RRGGBB format.",
+        },
+        accentColor: {
+          type: "STRING",
+          description: "Accent weapon color in #RRGGBB format.",
+        },
+        scale: {
+          type: "NUMBER",
+          description: "Weapon size multiplier, usually between 0.8 and 1.5.",
+        },
+        handOffsetX: {
+          type: "NUMBER",
+          description: "Optional horizontal visual offset from the hand.",
+        },
+        handOffsetY: {
+          type: "NUMBER",
+          description: "Optional vertical visual offset from the hand.",
+        },
+      },
+      required: ["kind", "primaryColor", "accentColor", "scale", "handOffsetX", "handOffsetY"],
+    },
+    castFx: {
+      type: "OBJECT",
+      description: "Startup particles or muzzle flash effect.",
+      properties: {
+        color: {
+          type: "STRING",
+          description: "Primary cast color in #RRGGBB format.",
+        },
+        accentColor: {
+          type: "STRING",
+          description: "Secondary cast color in #RRGGBB format.",
+        },
+        count: {
+          type: "NUMBER",
+          description: "Suggested particle count.",
+        },
+        sizeScale: {
+          type: "NUMBER",
+          description: "Particle size scale multiplier.",
+        },
+        speedScale: {
+          type: "NUMBER",
+          description: "Particle speed multiplier.",
+        },
+        lifespan: {
+          type: "NUMBER",
+          description: "Particle lifespan in seconds.",
+        },
+      },
+      required: ["color", "accentColor", "count", "sizeScale", "speedScale", "lifespan"],
+    },
+    actions: {
+      type: "ARRAY",
+      description: "One to three standardized attack actions.",
+      items: {
+        type: "OBJECT",
+        properties: {
+          type: {
+            type: "STRING",
+            enum: ATTACK_ACTION_TYPES,
+            description: "Attack action type.",
+          },
+          pattern: {
+            type: "STRING",
+            enum: [...ATTACK_PROJECTILE_PATTERNS, "beam"],
+            description: "Projectile path pattern or beam marker.",
+          },
+          projectileKind: {
+            type: "STRING",
+            enum: [...ATTACK_PROJECTILE_KINDS, "beamlet"],
+            description: "Visual style for the projectile or beam tracer.",
+          },
+          count: {
+            type: "NUMBER",
+            description: "How many projectiles to spawn.",
+          },
+          speed: {
+            type: "NUMBER",
+            description: "Projectile travel speed scalar.",
+          },
+          sizeScale: {
+            type: "NUMBER",
+            description: "Projectile size multiplier based on head radius.",
+          },
+          spreadDeg: {
+            type: "NUMBER",
+            description: "Spread angle in degrees for spread or lob patterns.",
+          },
+          damageScale: {
+            type: "NUMBER",
+            description: "Damage multiplier around the base attack damage.",
+          },
+          lifetimeFrames: {
+            type: "NUMBER",
+            description: "Approximate projectile lifetime in frames.",
+          },
+          gravityScale: {
+            type: "NUMBER",
+            description: "Gravity multiplier for lobbed shots.",
+          },
+          homingStrength: {
+            type: "NUMBER",
+            description: "Small homing amount from 0 to around 0.12.",
+          },
+          orbitFrames: {
+            type: "NUMBER",
+            description: "How long orbiting projectiles circle before release.",
+          },
+          orbitRadiusScale: {
+            type: "NUMBER",
+            description: "Orbit radius multiplier based on head radius.",
+          },
+          waveAmplitudeScale: {
+            type: "NUMBER",
+            description: "Ground-wave vertical wobble multiplier.",
+          },
+          waveFrequency: {
+            type: "NUMBER",
+            description: "Ground-wave wobble speed.",
+          },
+          beamLengthScale: {
+            type: "NUMBER",
+            description: "Beam reach multiplier based on head radius.",
+          },
+          beamWidthScale: {
+            type: "NUMBER",
+            description: "Beam thickness multiplier based on head radius.",
+          },
+          knockback: {
+            type: "NUMBER",
+            description: "Hit pushback amount.",
+          },
+          color: {
+            type: "STRING",
+            description: "Primary action color in #RRGGBB format.",
+          },
+          accentColor: {
+            type: "STRING",
+            description: "Secondary action color in #RRGGBB format.",
+          },
+          splashRadiusScale: {
+            type: "NUMBER",
+            description: "Explosion radius multiplier for lobbed payloads.",
+          },
+          splashDamageScale: {
+            type: "NUMBER",
+            description: "Explosion damage multiplier for lobbed payloads.",
+          },
+        },
+        required: [
+          "type",
+          "pattern",
+          "projectileKind",
+          "count",
+          "speed",
+          "sizeScale",
+          "spreadDeg",
+          "damageScale",
+          "lifetimeFrames",
+          "gravityScale",
+          "homingStrength",
+          "orbitFrames",
+          "orbitRadiusScale",
+          "waveAmplitudeScale",
+          "waveFrequency",
+          "beamLengthScale",
+          "beamWidthScale",
+          "knockback",
+          "color",
+          "accentColor",
+          "splashRadiusScale",
+          "splashDamageScale",
+        ],
+      },
     },
   },
-  required: ["description", "javascriptCode"],
+  required: ["description", "family", "palette", "weaponVisual", "castFx", "actions"],
 };
 
 export const accessorySchema = {
@@ -171,21 +363,30 @@ export const ideaSchema = {
 export function buildAttackSystemPrompt(attackFamilyId = DEFAULT_ATTACK_FAMILY) {
   const family = getAttackFamilyConfig(attackFamilyId);
   return `
-        You are a JavaScript code generator for a 2D stickman game. Your primary goal is to generate safe, runnable code in the provided JSON schema.
+        You are a combat designer for a 2D stickman game.
+        You are NOT writing JavaScript.
+        You must return a single standardized attack DSL object in the exact JSON schema.
 
         CONSTRAINTS AND CONTEXT:
         ${GAME_CONTEXT_DETAILS}
-        - JSON output must be perfectly structured.
         - ACTIVE ATTACK FAMILY: ${family.label}
         - FAMILY SUMMARY: ${family.summary}
         - FAMILY EXAMPLES: ${family.examples.join(", ")}
-        - Only produce combat attacks built around weapons, guns, cannons, staffs, blades, spells, beams, blasts, bombs, or summoned objects.
-        - Reject body-move concepts like spin kicks, punches, wrestling moves, karate combos, acrobatics, and other full-character animation requests.
-        - If the user asks for a body move, convert it into a visually similar combat tool. Example: "spinning kick" becomes an "energy chakram" or "whirlwind blade".
-        - Stay inside the active family. Do not drift into another family unless the user's wording is still clearly compatible with ${family.label}.
-        - If the user requests a weapon, include its drawing code in 'requiredEquipmentDrawCode'.
+        - Stay inside the active family.
+        - Choose a weaponVisual that matches the family.
+        - Prefer 1 or 2 actions. Use 3 only when necessary.
+        - Projectile patterns should stay readable and playable, not chaotic.
+        - Good mappings:
+          - blade -> spread chakrams, straight slashes, radial shards
+          - ballistic -> straight bullets, spread shots, rail beams
+          - arcane -> beams, bolts, orbiting orbs
+          - explosive -> lobbed rockets, ground waves, burst payloads
+          - summon -> orbit shots, homing orbs, drone-like volleys
+        - If the user asks for a body move, convert it into a weapon, beam, spell, or projectile attack in the same spirit.
 
-        TASK: Return a single JSON OBJECT strictly adhering to the attackSchema. Use English comments for any complex parts.
+        TASK:
+        Return a single JSON object that matches attackSchema exactly.
+        Use concise English descriptions.
         `;
 }
 
@@ -210,7 +411,7 @@ export function buildIdeasPayload(attackFamilyId = DEFAULT_ATTACK_FAMILY) {
   return {
     contents: [{
       parts: [{
-        text: `Generate 3 extremely short ${family.label.toLowerCase()} attack ideas and 3 simple accessory ideas suitable for a stickman fighting game. Attack ideas must stay inside this family: ${family.summary} Do not suggest kicks, punches, wrestling moves, flips, or body-animation-heavy attacks. Ideas must be easy to translate into code.`,
+        text: `Generate 3 extremely short ${family.label.toLowerCase()} attack ideas and 3 simple accessory ideas suitable for a stickman fighting game. Attack ideas must stay inside this family: ${family.summary} Do not suggest kicks, punches, wrestling moves, flips, or body-animation-heavy attacks. Ideas must be easy to translate into the attack DSL using beams, projectiles, orbit shots, lobs, or ground waves.`,
       }],
     }],
     systemInstruction: {
