@@ -20,6 +20,11 @@ import {
     normalizeAttackSpec,
     updateStandardProjectile,
 } from "./attack-dsl.js";
+import {
+    createAccessoryRenderer,
+    describeAccessorySpec,
+    normalizeAccessorySet,
+} from "./accessory-dsl.js";
 import { requestStructuredJson } from "./ai-client.js";
 
 // --- API & GAME STATE SETUP ---
@@ -1400,18 +1405,15 @@ import { requestStructuredJson } from "./ai-client.js";
             addMessage('System', 'Physical move attacks like kicks or punches are blocked. Please use weapons, projectiles, gadgets, or spells instead.', '#f59e0b');
             return;
         }
-        
-        // OYUNU DURAKLAT VE BUTONU DEVRE DIÅžI BIRAK
-        // FIX: KarÅŸÄ±lÄ±klÄ± butonlarÄ± da deaktif et
-        isGamePaused = true; 
+
+        isGamePaused = true;
         isGeneratingCode = true;
         updateCoachState();
-        
-        // YENÄ°: YÃ¼kleme mesajÄ±nÄ± gÃ¼ncelle
+
         loadingOverlay.textContent = schemaType === 'attack' ? 'Generating attack...' : 'Generating accessory...';
         loadingOverlay.classList.remove('hidden');
-        
-        buttonElement.disabled = true; 
+
+        buttonElement.disabled = true;
         if (schemaType === 'attack') {
             generateCodeAccessoryButton.disabled = true;
         } else if (schemaType === 'accessory') {
@@ -1421,7 +1423,7 @@ import { requestStructuredJson } from "./ai-client.js";
 
         let responseSchema = null;
         let contextData = {};
-        
+
         if (schemaType === 'accessory') {
             responseSchema = accessorySchema;
             contextData = {
@@ -1429,18 +1431,18 @@ import { requestStructuredJson } from "./ai-client.js";
                 torsoLength: player.torsoLength,
                 fullLegLength: player.fullLegLength,
                 limbLength: player.limbLength,
-                facing: player.facing, 
+                facing: player.facing,
             };
         } else if (schemaType === 'attack') {
             responseSchema = attackSchema;
         }
-        
+
         let userQuery = `Generate the requested output for the following description: ${promptText}`;
 
         if (schemaType === 'accessory') {
-            userQuery = `The stickman currently has the following physical dimensions: ${JSON.stringify(contextData)}. Based on this context and the user's request: ${promptText}, generate the accessory code.`;
+            userQuery = `The stickman currently has the following physical dimensions: ${JSON.stringify(contextData)}. Based on this context and the user's request: ${promptText}, generate one or more standardized accessory DSL objects using primitive visual layers.`;
         } else if (schemaType === 'attack') {
-             userQuery = `Based on the user's request: ${promptText}, generate a standardized combat attack DSL object. Use only weapon, projectile, gadget, summon, or magic behavior. If the request sounds like a body move, reinterpret it as a combat tool instead of animating the full character body.`;
+            userQuery = `Based on the user's request: ${promptText}, generate a standardized combat attack DSL object. Use only weapon, projectile, gadget, summon, or magic behavior. If the request sounds like a body move, reinterpret it as a combat tool instead of animating the full character body.`;
         }
 
         const payload = {
@@ -1450,8 +1452,8 @@ import { requestStructuredJson } from "./ai-client.js";
 
         if (responseSchema) {
             payload.generationConfig = {
-                responseMimeType: "application/json",
-                responseSchema: responseSchema
+                responseMimeType: 'application/json',
+                responseSchema,
             };
         }
 
@@ -1461,309 +1463,137 @@ import { requestStructuredJson } from "./ai-client.js";
             const result = await requestStructuredJson(apiUrl, payload);
             responseText = result.data;
         } catch (error) {
-            console.error("API request failed:", error);
+            console.error('API request failed:', error);
             codeDisplayElement.innerHTML = `<strong>AI Error:</strong><br>${error.message}`;
             addMessage('System', `AI error: ${error.message}`, '#b91c1c');
         }
-        
-        // KOD OLUÅžUMU BÄ°TTÄ°ÄžÄ°NDE OYUN PAUSE KALACAK.
-        isGamePaused = true; 
+
+        isGamePaused = true;
         isGeneratingCode = false;
         loadingOverlay.classList.add('hidden');
-        // FIX: KarÅŸÄ±lÄ±klÄ± butonlarÄ± tekrar aktif et
         generateCodeAttackButton.disabled = false;
         generateCodeAccessoryButton.disabled = false;
         syncPromptCtaState();
         fetchCreativeIdeas();
-        
-        if (responseText) {
-            
-            if (schemaType === 'attack') {
-                try {
-                    const normalizedAttack = normalizeAttackSpec(responseText, selectedAttackFamily);
-                    const compiledAttack = compileAttackSpec(normalizedAttack, {
-                        spawnProjectile,
-                        spawnParticleEffect,
-                        FLOOR_Y,
-                        GRAVITY,
-                    });
-                    const validationError = validateAttackFunction(compiledAttack);
+
+        if (!responseText) {
+            codeDisplayElement.textContent = 'Error: no response from the API.';
+            addMessage('System', 'No response was received from the code generation API.', '#b91c1c');
+            updateCoachState();
+            return;
+        }
+
+        if (schemaType === 'attack') {
+            try {
+                const normalizedAttack = normalizeAttackSpec(responseText, selectedAttackFamily);
+                const compiledAttack = compileAttackSpec(normalizedAttack, {
+                    spawnProjectile,
+                    spawnParticleEffect,
+                    FLOOR_Y,
+                    GRAVITY,
+                });
+                const validationError = validateAttackFunction(compiledAttack);
+                if (validationError) {
+                    throw validationError;
+                }
+
+                currentAccessories = currentAccessories.filter((acc) => !acc.isAttackEquipment);
+
+                const equipmentRenderer = createAttackEquipmentRenderer(normalizedAttack);
+                const equipmentValidationError = validateAccessoryRenderer(equipmentRenderer);
+                if (equipmentValidationError) {
+                    throw equipmentValidationError;
+                }
+
+                currentAccessories.push({
+                    id: 'att_eq_' + Date.now(),
+                    description: normalizedAttack.description + ' (Equipment)',
+                    code: equipmentRenderer,
+                    location: 'hand',
+                    isAttackEquipment: true,
+                });
+
+                currentAttackSpec = normalizedAttack;
+                dynamicAttackFunction = compiledAttack;
+                renderAccessoryList();
+
+                const attackSummary = describeAttackSpec(normalizedAttack);
+                codeDisplayElement.innerHTML = `
+                    <div class="accessory-item">
+                        <span style="font-weight: bold; color: #d97706;">ACTIVE ATTACK:</span>
+                        <span>${normalizedAttack.description}</span>
+                        <span class="remove-accessory" onclick="resetAttack()">Remove</span>
+                    </div>
+                    <div style="font-size: 0.8rem; color: #6b7280; margin-top: 5px;">Family: ${getAttackFamilyConfig(normalizedAttack.family).label} | Base damage: ${STANDARD_ATTACK_DAMAGE}</div>
+                    <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 4px;">${attackSummary}</div>
+                `;
+
+                addMessage('System', `Standardized attack loaded: ${attackSummary}.`, '#d97706');
+                addMessage('System', `Attack gear loaded (${normalizedAttack.description}).`, '#d97706');
+            } catch (e) {
+                codeDisplayElement.innerHTML = `
+                    <strong>ATTACK DSL ERROR:</strong><br>
+                    Error: ${e.message}<br>
+                    <br>
+                    <span class="debug-label">Returned attack payload:</span>
+                    <pre class="debug-code-section" style="color: #FFF; background-color: #b91c1c;">${JSON.stringify(responseText, null, 2)}</pre>
+                `;
+                addMessage('System', `The AI-generated attack spec is invalid. Error: ${e.message}`, '#b91c1c');
+                currentAccessories = currentAccessories.filter((acc) => !acc.isAttackEquipment);
+                renderAccessoryList();
+                currentAttackSpec = null;
+                dynamicAttackFunction = defaultAttack;
+            }
+        } else if (schemaType === 'accessory') {
+            try {
+                const normalizedAccessories = normalizeAccessorySet(responseText);
+
+                normalizedAccessories.forEach((accessorySpec) => {
+                    const renderer = createAccessoryRenderer(accessorySpec);
+                    const validationError = validateAccessoryRenderer(renderer);
                     if (validationError) {
                         throw validationError;
-                    }
-
-                    currentAccessories = currentAccessories.filter(acc => !acc.isAttackEquipment);
-
-                    const equipmentRenderer = createAttackEquipmentRenderer(normalizedAttack);
-                    const equipmentValidationError = validateAccessoryRenderer(equipmentRenderer);
-                    if (equipmentValidationError) {
-                        throw equipmentValidationError;
                     }
 
                     currentAccessories.push({
-                        id: 'att_eq_' + Date.now(),
-                        description: normalizedAttack.description + " (Equipment)",
-                        code: equipmentRenderer,
-                        location: 'hand',
-                        isAttackEquipment: true,
+                        id: 'acc_' + accessoryIdCounter++,
+                        description: accessorySpec.description.length > 50
+                            ? accessorySpec.description.substring(0, 47) + '...'
+                            : accessorySpec.description,
+                        code: renderer,
+                        location: accessorySpec.targetLocation,
+                        kind: accessorySpec.kind,
+                        spec: accessorySpec,
                     });
+                });
 
-                    currentAttackSpec = normalizedAttack;
-                    dynamicAttackFunction = compiledAttack;
-                    renderAccessoryList();
+                renderAccessoryList();
+                const accessorySummaries = normalizedAccessories
+                    .slice(0, 3)
+                    .map((accessorySpec) => describeAccessorySpec(accessorySpec))
+                    .join(', ');
 
-                    const attackSummary = describeAttackSpec(normalizedAttack);
-                    codeDisplayElement.innerHTML = `
-                        <div class="accessory-item">
-                            <span style="font-weight: bold; color: #d97706;">ACTIVE ATTACK:</span>
-                            <span>${normalizedAttack.description}</span>
-                            <span class="remove-accessory" onclick="resetAttack()">Remove</span>
-                        </div>
-                        <div style="font-size: 0.8rem; color: #6b7280; margin-top: 5px;">Family: ${getAttackFamilyConfig(normalizedAttack.family).label} | Base damage: ${STANDARD_ATTACK_DAMAGE}</div>
-                        <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 4px;">${attackSummary}</div>
-                    `;
-
-                    addMessage('System', `Standardized attack loaded: ${attackSummary}.`, '#d97706');
-                    addMessage('System', `Attack gear loaded (${normalizedAttack.description}).`, '#d97706');
-                } catch (e) {
-                    codeDisplayElement.innerHTML = `
-                        <strong>ATTACK DSL ERROR:</strong><br>
-                        Error: ${e.message}<br>
-                        <br>
-                        <span class="debug-label">Returned attack payload:</span>
-                        <pre class="debug-code-section" style="color: #FFF; background-color: #b91c1c;">${JSON.stringify(responseText, null, 2)}</pre>
-                    `;
-                    addMessage('System', `The AI-generated attack spec is invalid. Error: ${e.message}`, '#b91c1c');
-                    currentAccessories = currentAccessories.filter(acc => !acc.isAttackEquipment);
-                    renderAccessoryList();
-                    currentAttackSpec = null;
-                    dynamicAttackFunction = defaultAttack;
-                }
-            } else if (schemaType === 'accessory') {
-                // --- Aksesuar Ä°ÅŸleme MantÄ±ÄŸÄ± (JSON ARRAY) ---
-                const accessoryPayload = Array.isArray(responseText)
-                    ? { accessories: responseText }
-                    : responseText;
-                const accessoriesToProcess = Array.isArray(accessoryPayload?.accessories)
-                    ? accessoryPayload.accessories
-                    : accessoryPayload?.javascriptCode && accessoryPayload?.targetLocation
-                        ? [accessoryPayload]
-                    : [];
-
-                let accessoriesAdded = 0;
-                
-                for (const acc of accessoriesToProcess) {
-                    if (acc.javascriptCode && acc.targetLocation) {
-                        let rawCode = acc.javascriptCode.trim();
-                        const targetLocation = acc.targetLocation;
-                        const description = acc.description || promptText;
-
-                         // AGRESÄ°F KOD TEMÄ°ZLEME: Fonksiyon sarmalayÄ±cÄ±larÄ±nÄ± temizle
-                        const openBraceIndex = rawCode.indexOf('{');
-                        const closeBraceIndex = rawCode.lastIndexOf('}');
-
-                        if (openBraceIndex !== -1 && closeBraceIndex !== -1 && closeBraceIndex > openBraceIndex) {
-                            rawCode = rawCode.substring(openBraceIndex + 1, closeBraceIndex).trim();
-                        } else if (rawCode.startsWith('(') && rawCode.endsWith(')')) {
-                            rawCode = rawCode.substring(1, rawCode.length - 1).trim();
-                        }
-                        rawCode = rawCode.trim(); 
-
-                        // *** FIX: xPos/yPos'u x/y ile otomatik dÃ¼zelt ***
-                        rawCode = rawCode.replace(/xPos/g, 'x').replace(/yPos/g, 'y');
-
-                        try {
-                             // Parametreler: player, ctx, x, y, angle, scale
-                             const newFunc = new Function('player', 'ctx', 'x', 'y', 'angle', 'scale', rawCode);
-                             const validationError = validateAccessoryRenderer(newFunc);
-                             if (validationError) {
-                                 throw validationError;
-                             }
-                             
-                             const newAccessory = {
-                                 id: 'acc_' + accessoryIdCounter++, // Benzersiz ID
-                                 description: description.length > 50 ? description.substring(0, 47) + '...' : description,
-                                 code: newFunc,
-                                 location: targetLocation
-                             };
-
-                             currentAccessories.push(newAccessory);
-                             accessoriesAdded++;
-
-                        } catch (e) {
-                            codeDisplayElement.innerHTML = `<strong>CODE ERROR (Accessory #${accessoriesAdded + 1}):</strong><br>Error: ${e.message}<br>Raw code:<pre class="debug-code-section" style="color: #f87171;">${rawCode}</pre>`;
-                            addMessage('System', `The AI-generated code is invalid. Error: ${e.message}`, '#b91c1c');
-                            return; 
-                        }
-                    } else {
-                        console.error("Accessory object is missing required fields (javascriptCode or targetLocation):", acc);
-                        
-                        codeDisplayElement.innerHTML = `<strong>ERROR:</strong> The AI returned an object missing required fields (${acc.javascriptCode ? '' : 'javascriptCode,'} ${acc.targetLocation ? '' : 'targetLocation'}). Please check the console.`;
-                        addMessage('System', `AI structure error: ${(acc.description || 'Unnamed accessory')} was rejected.`, '#b91c1c');
-                    }
-                }
-                
-                if (accessoriesAdded > 0) {
-                    renderAccessoryList(); 
-                    addMessage('System', `Successfully loaded ${accessoriesAdded} new accessory items.`, '#059669');
-                } else {
-                    console.error("API returned a structure that resulted in 0 valid accessories (Accessories Array):", responseText);
-
-                    codeDisplayElement.innerHTML = `<strong>Error:</strong> The API did not return valid accessory code. (0 items loaded)<br>Please check the console.`;
-                    addMessage('System', 'The API returned a response without valid accessory code.', '#b91c1c');
-                }
-            } else if (schemaType === 'attack' && false) {
-                // --- SaldÄ±rÄ± Ä°ÅŸleme MantÄ±ÄŸÄ± (JSON OBJECT) ---
-                const attackData = responseText;
-                let drawCode = attackData.requiredEquipmentDrawCode || '';
-                let behaviorCode = attackData.projectileBehaviorCode || ''; // YENÄ°: DavranÄ±ÅŸ kodu
-                let attackLogic = attackData.javascriptCode || '';
-                const attackDescription = attackData.description || 'Unnamed Attack';
-                
-                // Kodu temizle
-                attackLogic = attackLogic.trim().replace(/^```(js|javascript)?\s*/i, '').replace(/\s*```$/, '');
-                drawCode = drawCode.trim().replace(/^```(js|javascript)?\s*/i, '').replace(/\s*```$/, '');
-                behaviorCode = normalizeProjectileBehaviorCode(behaviorCode);
-
-                const attackCodeSections = splitProjectileBehaviorFromLogic(attackLogic, behaviorCode);
-                attackLogic = attackCodeSections.attackLogic;
-                behaviorCode = attackCodeSections.behaviorCode;
-                
-                // 1. Ã–nceki saldÄ±rÄ± ekipmanÄ±nÄ± kaldÄ±r
-                currentAccessories = currentAccessories.filter(acc => !acc.isAttackEquipment);
-
-                if (drawCode.trim().length > 0) {
-                    // FIX: xPos/yPos'u x/y ile otomatik dÃ¼zelt
-                    let fixedDrawCode = drawCode.replace(/xPos/g, 'x').replace(/yPos/g, 'y');
-                    // Gelen kodun iÃ§indeki satÄ±r sonlarÄ±nÄ± kaldÄ±rÄ±p gÃ¼venli hale getir
-                    fixedDrawCode = fixedDrawCode.replace(/\n/g, ' ').replace(/\r/g, ' ');
-                    
-                    // *** YENÄ° DÃœZELTME: 'scale' deÄŸiÅŸkeninin tekrar tanÄ±mlanmasÄ±nÄ± Ã¶nle ***
-                    fixedDrawCode = fixedDrawCode.replace(/const\s+scale\s*=.+?;/g, ''); 
-
-                    try {
-                        // Aksesuar kodu parametreleri: player, ctx, x, y, angle, scale
-                        const newFunc = new Function('player', 'ctx', 'x', 'y', 'angle', 'scale', fixedDrawCode);
-                        const validationError = validateAccessoryRenderer(newFunc);
-                        if (validationError) {
-                            throw validationError;
-                        }
-                        const newEquipment = {
-                            id: 'att_eq_' + Date.now(),
-                            description: attackDescription + " (Equipment)",
-                            code: newFunc,
-                            location: 'hand', // SaldÄ±rÄ± silahlarÄ± her zaman eldedir
-                            isAttackEquipment: true // Bu Ã¶ÄŸenin saldÄ±rÄ± ekipmanÄ± olduÄŸunu iÅŸaretle
-                        };
-                        currentAccessories.push(newEquipment);
-                        renderAccessoryList(); // Aksesuar listesini gÃ¼ncelle
-                        addMessage('System', `Attack gear loaded (${attackDescription}).`, '#d97706');
-                    } catch (e) {
-                        // EÄŸer Ã§izim kodu hatalÄ±ysa, bu kÄ±smÄ± logla ama mantÄ±ÄŸÄ± Ã§alÄ±ÅŸtÄ±rmaya devam et
-                        addMessage('System', `Error: equipment drawing code is invalid. Continuing without weapon art. Error: ${e.message}`, '#b91c1c');
-                        drawCode = ''; // HatalÄ± Ã§izim kodunu temizle
-                        console.error("Equipment Draw Code Error (Hata veren Ã§izim kodu):", fixedDrawCode, e);
-                    }
-                }
-
-                // --- Ana SaldÄ±rÄ± MantÄ±ÄŸÄ± Entegrasyonu ---
-                let correctedLogic = attackLogic
-                    .replace(/player\.facingRight/g, 'player.facing > 0'); // YanlÄ±ÅŸ deÄŸiÅŸkeni dÃ¼zelt
-
-                // HÄ±z deÄŸiÅŸkenlerini kontrol et ve dÃ¼zelt (velX -> vx)
-                correctedLogic = correctedLogic.replace(/opponent\.velX/g, 'opponent.vx').replace(/opponent\.velY/g, 'opponent.vy');
-                correctedLogic = correctedLogic.replace(/player\.velX/g, 'player.vx').replace(/player\.velY/g, 'player.vy');
-                correctedLogic = correctedLogic.replace(/\bp\.dead\b/g, 'p.isAlive');
-                
-                // *** YENÄ° DÃœZELTME: HandRX/RY const redeclaration hatasÄ±nÄ± Ã¶nle ***
-                // handRX ve handRY'nin const ile tekrar tanÄ±mlanmasÄ±nÄ± Ã¶nle (eÄŸer AI eklediyse)
-                correctedLogic = correctedLogic
-                    .replace(/const\s+handRX\s*=/g, 'handRX =')
-                    .replace(/const\s+handRY\s*=/g, 'handRY =');
-                
-                
-                try {
-                    // Sabit hasar deÄŸerini enjekte et (10 olarak belirlendi)
-                    const FIXED_DAMAGE = 10;
-
-                    // Mermi DavranÄ±ÅŸ Kodunu Dizeye Ekle
-                    const behaviorCodeString = behaviorCode
-                        .replace(/\\/g, '\\\\')
-                        .replace(/`/g, '\\`')
-                        .replace(/\$\{/g, '\\${')
-                        .replace(/\n/g, ' ')
-                        .replace(/\r/g, ' ');
-
-                    // SaldÄ±rÄ± sÄ±rasÄ±nda silahÄ±n/merminin Ã§izimini ve mantÄ±ÄŸÄ±nÄ± birleÅŸtir
-                    const fullCode = 
-                        `// --- SABÄ°T HASAR DEÄžERÄ° ENJEKTE EDÄ°LDÄ° ---\n` +
-                        `const ATTACK_DAMAGE = ${FIXED_DAMAGE};\n` + 
-                        `const PROJECTILE_BEHAVIOR_CODE = \`${behaviorCodeString}\`;\n` + // DavranÄ±ÅŸ kodunu sabit olarak ekle
-                        `// --- Kafa ve El PozisyonlarÄ±nÄ± Hesapla (Player context) ---\n` +
-                        `const shoulderX = player.shoulder.x; \n` +
-                        `const shoulderY = player.shoulder.y; \n` +
-                        `// Mouse koordinatlarÄ± global olarak kullanÄ±labilir, ancak fonksiyon parametrelerine dahil edilmeli\n` +
-                        `const targetX = player.isPlayer ? mouseX : opponent.head.x;\n` + 
-                        `const targetY = player.isPlayer ? mouseY : opponent.head.y;\n` + 
-                        `const angleToTarget = Math.atan2(targetY - shoulderY, targetX - shoulderX);\n` +
-                        `const armLength = player.limbLength * 1.5;\n` + 
-                        `const handRX = shoulderX + Math.cos(angleToTarget + Math.PI / 12) * armLength; // SaÄŸ el konumu\n` + 
-                        `const handRY = shoulderY + Math.sin(angleToTarget + Math.PI / 12) * armLength;\n` +
-                        
-                        `// --- Ana SaldÄ±rÄ± MantÄ±ÄŸÄ± (Hasar ve Ä°tme) ---\n` +
-                        `${correctedLogic}\n`;
-                    
-                    // mouseX ve mouseY parametrelerini ekledik
-                    const newFunc = new Function('player', 'opponent', 'ctx', 'canvas', 'mouseX', 'mouseY', fullCode);
-                    const validationError = validateAttackFunction(newFunc);
-                    if (validationError) {
-                        throw validationError;
-                    }
-                    dynamicAttackFunction = newFunc;
-                    
-                    // YENÄ°: SaldÄ±rÄ± UI'Ä±nÄ± gÃ¼ncelle (X ile kaldÄ±rma dahil)
-                    codeDisplayElement.innerHTML = `
-                        <div class="accessory-item">
-                            <span style="font-weight: bold; color: #d97706;">ACTIVE ATTACK:</span>
-                            <span>${attackDescription}</span>
-                            <span class="remove-accessory" onclick="resetAttack()">Remove</span>
-                        </div>
-                        <div style="font-size: 0.8rem; color: #6b7280; margin-top: 5px;">(Fixed damage: ${FIXED_DAMAGE})</div>
-                    `;
-                    
-                    addMessage('System', `New attack code loaded successfully: ${attackDescription} (Fixed damage: ${FIXED_DAMAGE})`, '#d97706');
-
-                } catch (e) {
-                         // Hata ayÄ±klama Ã§Ä±ktÄ±larÄ±
-                       const FIXED_DAMAGE = 10; // Debug iÃ§in sabit deÄŸer
-                       codeDisplayElement.innerHTML = `
-                           <strong>CODE ERROR (Attack Logic):</strong><br>
-                           Error: ${e.message}<br>
-                           <br>
-                           <span class="debug-label">1. Draw Code (added as accessory or failed):</span>
-                           <pre class="debug-code-section">${drawCode || 'EMPTY'}</pre>
-                           <span class="debug-label" style="color: #f87171;">2. Logic Code (failing section):</span>
-                           <pre class="debug-code-section" style="color: #FFF; background-color: #b91c1c;">${correctedLogic}</pre>
-                           <span class="debug-label" style="color: #f59e0b;">3. Projectile Behavior Code:</span>
-                           <pre class="debug-code-section">${behaviorCode || 'EMPTY'}</pre>
-                       `;
-                       addMessage('System', `The AI-generated attack code is invalid. Error: ${e.message}`, '#b91c1c');
-                       // Hata durumunda varsayÄ±lana geri dÃ¶nÃ¼lÃ¼r ve varsa ekipman kaldÄ±rÄ±lÄ±r
-                       currentAccessories = currentAccessories.filter(acc => !acc.isAttackEquipment);
-                       renderAccessoryList();
-                       dynamicAttackFunction = defaultAttack; 
-                }
-
-            } else {
-                // Bilinmeyen JSON yanÄ±tÄ±
-                console.error("Unknown JSON structure returned by API:", responseText);
-                codeDisplayElement.innerHTML = 'Error: the API returned an unknown structure.';
-                addMessage('System', 'API structure error: unknown response format.', '#b91c1c');
+                codeDisplayElement.innerHTML = `
+                    <strong>Loaded ${normalizedAccessories.length} accessory item${normalizedAccessories.length === 1 ? '' : 's'}.</strong><br>
+                    <span style="color: #94a3b8;">${accessorySummaries}</span>
+                `;
+                addMessage('System', `Standardized accessories loaded: ${accessorySummaries}.`, '#059669');
+            } catch (e) {
+                codeDisplayElement.innerHTML = `
+                    <strong>ACCESSORY DSL ERROR:</strong><br>
+                    Error: ${e.message}<br>
+                    <br>
+                    <span class="debug-label">Returned accessory payload:</span>
+                    <pre class="debug-code-section" style="color: #FFF; background-color: #b91c1c;">${JSON.stringify(responseText, null, 2)}</pre>
+                `;
+                addMessage('System', `The AI-generated accessory spec is invalid. Error: ${e.message}`, '#b91c1c');
             }
         } else {
-            codeDisplayElement.textContent = 'Error: no response from the API.';
-            addMessage('System', 'No response was received from the code generation API.', '#b91c1c');
+            console.error('Unknown JSON structure returned by API:', responseText);
+            codeDisplayElement.innerHTML = 'Error: the API returned an unknown structure.';
+            addMessage('System', 'API structure error: unknown response format.', '#b91c1c');
         }
+
         updateCoachState();
     }
 

@@ -5,6 +5,11 @@ import {
   ATTACK_PROJECTILE_PATTERNS,
   ATTACK_WEAPON_KINDS,
 } from "./attack-dsl.js";
+import {
+  ACCESSORY_KINDS,
+  ACCESSORY_LAYER_SHAPES,
+  ACCESSORY_TARGET_LOCATIONS,
+} from "./accessory-dsl.js";
 
 export const DEFAULT_ATTACK_FAMILY = "blade";
 
@@ -92,6 +97,11 @@ GAME ENGINE DETAILS AND AVAILABLE VARIABLES:
     - The arena backdrop is light ivory, so avoid pale white, faint yellow, or washed-out pastel effects unless they include a darker outline or saturated glow.
     - Favor high-contrast colors that stay readable on a bright stage.
     - Keep descriptions short and clean English.
+
+5. ACCESSORY DSL MODE:
+    - Do NOT write raw JavaScript for accessories either.
+    - Accessory visuals must be described with simple primitive layers such as circles, ellipses, rounded rectangles, polygons, lines, and arcs.
+    - Keep accessory layer stacks readable and compact.
 `;
 
 export const attackSchema = {
@@ -314,28 +324,160 @@ export const attackSchema = {
 
 export const accessorySchema = {
   type: "OBJECT",
-  description: "Returns an object containing an accessories array.",
+  description: "Returns an object containing an accessories array of standardized accessory DSL objects. No raw JavaScript is allowed for accessories.",
   properties: {
     accessories: {
       type: "ARRAY",
-      description: "Array of accessory objects.",
+      description: "Array of standardized accessory objects.",
       items: {
         type: "OBJECT",
         properties: {
           targetLocation: {
             type: "STRING",
-            description: "Valid values: head, head_top, eyes, neck, hand, wrist, torso, back, foot.",
+            enum: ACCESSORY_TARGET_LOCATIONS,
+            description: "Body anchor where the accessory should attach.",
           },
           description: {
             type: "STRING",
             description: "Short summary of the requested accessory.",
           },
-          javascriptCode: {
+          kind: {
             type: "STRING",
-            description: "Return only the JavaScript canvas function body using player, ctx, x, y, angle, scale.",
+            enum: ACCESSORY_KINDS,
+            description: "Closest visual category for the accessory.",
+          },
+          scale: {
+            type: "NUMBER",
+            description: "Overall accessory size multiplier.",
+          },
+          offsetX: {
+            type: "NUMBER",
+            description: "Horizontal offset from the anchor point.",
+          },
+          offsetY: {
+            type: "NUMBER",
+            description: "Vertical offset from the anchor point.",
+          },
+          rotationDeg: {
+            type: "NUMBER",
+            description: "Base accessory rotation in degrees.",
+          },
+          flipWithFacing: {
+            type: "BOOLEAN",
+            description: "Whether the accessory should mirror when the fighter changes facing direction.",
+          },
+          palette: {
+            type: "OBJECT",
+            properties: {
+              primaryColor: {
+                type: "STRING",
+                description: "Main accessory color in #RRGGBB format.",
+              },
+              accentColor: {
+                type: "STRING",
+                description: "Secondary highlight color in #RRGGBB format.",
+              },
+              detailColor: {
+                type: "STRING",
+                description: "Dark detail or outline color in #RRGGBB format.",
+              },
+            },
+            required: ["primaryColor", "accentColor", "detailColor"],
+          },
+          layers: {
+            type: "ARRAY",
+            description: "Two to six primitive visual layers for the accessory.",
+            items: {
+              type: "OBJECT",
+              properties: {
+                shape: {
+                  type: "STRING",
+                  enum: ACCESSORY_LAYER_SHAPES,
+                  description: "Primitive drawing shape.",
+                },
+                x: { type: "NUMBER", description: "Local X offset." },
+                y: { type: "NUMBER", description: "Local Y offset." },
+                width: { type: "NUMBER", description: "Width for rect-like shapes." },
+                height: { type: "NUMBER", description: "Height for rect-like shapes." },
+                radius: { type: "NUMBER", description: "Radius for circles and arcs." },
+                radiusX: { type: "NUMBER", description: "Horizontal radius for ellipses." },
+                radiusY: { type: "NUMBER", description: "Vertical radius for ellipses." },
+                rotationDeg: { type: "NUMBER", description: "Local layer rotation." },
+                strokeWidth: { type: "NUMBER", description: "Stroke thickness." },
+                opacity: { type: "NUMBER", description: "Layer opacity from 0 to 1." },
+                shadowBlur: { type: "NUMBER", description: "Optional glow/shadow blur." },
+                fillColor: {
+                  type: "STRING",
+                  description: "Use #RRGGBB or one of the palette aliases: primary, accent, detail.",
+                },
+                strokeColor: {
+                  type: "STRING",
+                  description: "Use #RRGGBB or one of the palette aliases: primary, accent, detail.",
+                },
+                shadowColor: {
+                  type: "STRING",
+                  description: "Use #RRGGBB or one of the palette aliases: primary, accent, detail.",
+                },
+                startDeg: { type: "NUMBER", description: "Arc start angle in degrees." },
+                endDeg: { type: "NUMBER", description: "Arc end angle in degrees." },
+                x2: { type: "NUMBER", description: "Line end X." },
+                y2: { type: "NUMBER", description: "Line end Y." },
+                fill: { type: "BOOLEAN", description: "Whether the layer should be filled." },
+                stroke: { type: "BOOLEAN", description: "Whether the layer should be stroked." },
+                closed: { type: "BOOLEAN", description: "Whether polygon paths should close." },
+                points: {
+                  type: "ARRAY",
+                  description: "Polygon points for polygon layers.",
+                  items: {
+                    type: "OBJECT",
+                    properties: {
+                      x: { type: "NUMBER", description: "Point x." },
+                      y: { type: "NUMBER", description: "Point y." },
+                    },
+                    required: ["x", "y"],
+                  },
+                },
+              },
+              required: [
+                "shape",
+                "x",
+                "y",
+                "width",
+                "height",
+                "radius",
+                "radiusX",
+                "radiusY",
+                "rotationDeg",
+                "strokeWidth",
+                "opacity",
+                "shadowBlur",
+                "fillColor",
+                "strokeColor",
+                "shadowColor",
+                "startDeg",
+                "endDeg",
+                "x2",
+                "y2",
+                "fill",
+                "stroke",
+                "closed",
+                "points",
+              ],
+            },
           },
         },
-        required: ["targetLocation", "javascriptCode"],
+        required: [
+          "targetLocation",
+          "description",
+          "kind",
+          "scale",
+          "offsetX",
+          "offsetY",
+          "rotationDeg",
+          "flipWithFacing",
+          "palette",
+          "layers",
+        ],
       },
     },
   },
@@ -392,17 +534,22 @@ export function buildAttackSystemPrompt(attackFamilyId = DEFAULT_ATTACK_FAMILY) 
 
 export function buildAccessorySystemPrompt() {
   return `
-        You are a JavaScript code generator specialized in drawing accessories for a 2D stickman.
+        You are an accessory designer for a 2D stickman game.
+        You are NOT writing JavaScript.
+        You must return standardized accessory DSL objects in the exact JSON schema.
 
         CONTEXT & CONSTRAINTS:
         ${GAME_CONTEXT_DETAILS}
-        - Drawing Function Signature: (player, ctx, x, y, angle, scale).
-        - 'scale' must be applied to all size and distance measurements.
-        - Declare every helper variable before first use. Never reference undeclared names.
-        - Target Locations: 'head', 'head_top', 'eyes', 'neck', 'hand', 'wrist', 'torso', 'back', 'foot'.
-        - Use shadows, highlights, and rich colors where appropriate.
+        - Target Locations: ${ACCESSORY_TARGET_LOCATIONS.join(", ")}.
+        - Allowed kinds: ${ACCESSORY_KINDS.join(", ")}.
+        - Allowed primitive shapes: ${ACCESSORY_LAYER_SHAPES.join(", ")}.
+        - Use 2 to 6 layers per accessory.
+        - Keep the silhouette readable on a small stickman.
+        - Use palette aliases such as "primary", "accent", and "detail" inside layers when possible.
+        - Favor bold, high-contrast accessories that stay visible on the bright arena.
+        - Avoid giant props that cover the whole fighter.
 
-        TASK: Return a single JSON OBJECT strictly adhering to the accessorySchema. Put all generated items inside the 'accessories' array. Use English comments for any complex parts.
+        TASK: Return a single JSON OBJECT strictly adhering to the accessorySchema. Put all generated items inside the 'accessories' array.
         `;
 }
 
@@ -411,7 +558,7 @@ export function buildIdeasPayload(attackFamilyId = DEFAULT_ATTACK_FAMILY) {
   return {
     contents: [{
       parts: [{
-        text: `Generate 3 extremely short ${family.label.toLowerCase()} attack ideas and 3 simple accessory ideas suitable for a stickman fighting game. Attack ideas must stay inside this family: ${family.summary} Do not suggest kicks, punches, wrestling moves, flips, or body-animation-heavy attacks. Ideas must be easy to translate into the attack DSL using beams, projectiles, orbit shots, lobs, or ground waves.`,
+        text: `Generate 3 extremely short ${family.label.toLowerCase()} attack ideas and 3 simple accessory ideas suitable for a stickman fighting game. Attack ideas must stay inside this family: ${family.summary} Do not suggest kicks, punches, wrestling moves, flips, or body-animation-heavy attacks. Ideas must be easy to translate into the attack DSL using beams, projectiles, orbit shots, lobs, or ground waves. Accessory ideas must be easy to translate into a primitive-shape accessory DSL.`,
       }],
     }],
     systemInstruction: {
