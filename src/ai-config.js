@@ -1,5 +1,6 @@
 import {
   ATTACK_ACTION_TYPES,
+  ATTACK_DELIVERY_STYLES,
   ATTACK_DSL_FAMILIES,
   ATTACK_PROJECTILE_KINDS,
   ATTACK_PROJECTILE_PATTERNS,
@@ -19,35 +20,35 @@ export const ATTACK_FAMILIES = [
     label: "Blade",
     shortLabel: "Blades",
     summary: "Energy swords, sabers, axes, chakrams, and cutting weapon attacks.",
-    examples: ["Lightsaber slash wave", "Twin chakram burst", "Arc blade crescent"],
+    examples: ["Swing-cast saber wave", "Swing-cast twin chakrams", "Hand-swing arc blade crescent"],
   },
   {
     id: "ballistic",
     label: "Ballistic",
     shortLabel: "Ballistics",
     summary: "Rifles, pistols, cannons, railguns, and other firearm-style attacks.",
-    examples: ["Plasma rifle burst", "Railgun tracer shot", "Scatter cannon blast"],
+    examples: ["Punch-fired plasma burst", "Punch-fired rail shot", "Punch-cast scatter blast"],
   },
   {
     id: "arcane",
     label: "Arcane",
     shortLabel: "Arcane",
     summary: "Staffs, spell circles, runes, curses, and pure magic projectiles.",
-    examples: ["Arcane bolt staff", "Rune beam pulse", "Frost sigil lance"],
+    examples: ["Swing-cast rune beam", "Punch-cast arcane bolt", "Hand-swing frost sigil pulse"],
   },
   {
     id: "explosive",
     label: "Explosive",
     shortLabel: "Explosives",
     summary: "Bombs, grenades, rockets, mines, and burst-heavy payload attacks.",
-    examples: ["Sticky bomb lob", "Micro rocket volley", "Pulse mine throw"],
+    examples: ["Punch-cast bomb lob", "Swing-cast micro rocket volley", "Punch-fired pulse mine shot"],
   },
   {
     id: "summon",
     label: "Summon",
     shortLabel: "Summons",
     summary: "Combat drones, spectral weapons, orbiting orbs, and summoned helpers.",
-    examples: ["Drone laser escort", "Spectral spear launch", "Orbital shard ring"],
+    examples: ["Swing-cast shard ring", "Punch-cast spectral spear", "Hand-swing orbit orb volley"],
   },
 ];
 
@@ -81,11 +82,13 @@ GAME ENGINE DETAILS AND AVAILABLE VARIABLES:
 
 2. ATTACK STYLE RULES:
     - Attacks must be weapon-based, gadget-based, projectile-based, or magic/spell-based.
-    - Do NOT build melee choreography such as kicks, punches, spinning moves, flips, grapples, or martial-arts combos.
-    - If the user asks for a body move, reinterpret it as a themed combat tool instead.
+    - Do NOT build heavy melee choreography such as kicks, spinning moves, flips, grapples, acrobatics, or martial-arts combos.
+    - The only allowed body delivery styles are a simple punch or a simple hand swing.
+    - If the user asks for a body move, convert it into a punch-delivered or swing-delivered attack instead of animating the full body.
     - Stay compact and game-like: choose 1 to 3 actions only.
 
 3. ACTION SYSTEM:
+    - Allowed delivery styles: ${ATTACK_DELIVERY_STYLES.join(", ")}.
     - Allowed action types: ${ATTACK_ACTION_TYPES.join(", ")}.
     - Allowed projectile patterns: ${ATTACK_PROJECTILE_PATTERNS.join(", ")}.
     - Allowed projectile visuals: ${ATTACK_PROJECTILE_KINDS.join(", ")}.
@@ -118,6 +121,11 @@ export const attackSchema = {
       type: "STRING",
       enum: ATTACK_DSL_FAMILIES,
       description: "Attack family lane for the generated attack.",
+    },
+    deliveryStyle: {
+      type: "STRING",
+      enum: ATTACK_DELIVERY_STYLES,
+      description: "How the attack is physically delivered. Only simple punch or hand swing is allowed.",
     },
     palette: {
       type: "OBJECT",
@@ -321,7 +329,7 @@ export const attackSchema = {
       },
     },
   },
-  required: ["description", "family", "palette", "weaponVisual", "castFx", "actions"],
+  required: ["description", "family", "deliveryStyle", "palette", "weaponVisual", "castFx", "actions"],
 };
 
 export const accessorySchema = {
@@ -517,6 +525,10 @@ export function buildAttackSystemPrompt(attackFamilyId = DEFAULT_ATTACK_FAMILY) 
         - FAMILY SUMMARY: ${family.summary}
         - FAMILY EXAMPLES: ${family.examples.join(", ")}
         - Stay inside the active family.
+        - Every generated attack must choose one deliveryStyle: punch or swing.
+        - Punch means a short direct hand-thrust cast.
+        - Swing means a simple hand/arm swing cast.
+        - Never require kicks, spins, flips, grapples, wrestling, or full-body combo animation.
         - Choose a weaponVisual that matches the family.
         - Prefer 1 or 2 actions. Use 3 only when necessary.
         - Projectile patterns should stay readable and playable, not chaotic.
@@ -526,7 +538,7 @@ export function buildAttackSystemPrompt(attackFamilyId = DEFAULT_ATTACK_FAMILY) 
           - arcane -> beams, bolts, orbiting orbs
           - explosive -> lobbed rockets, ground waves, burst payloads
           - summon -> orbit shots, homing orbs, drone-like volleys
-        - If the user asks for a body move, convert it into a weapon, beam, spell, or projectile attack in the same spirit.
+        - If the user asks for a body move, reinterpret it as a punch-delivered or swing-delivered combat attack in the same spirit.
 
         TASK:
         Return a single JSON object that matches attackSchema exactly.
@@ -562,12 +574,12 @@ export function buildIdeasPayload(attackFamilyId = DEFAULT_ATTACK_FAMILY) {
   return {
     contents: [{
       parts: [{
-        text: `Generate 3 extremely short ${family.label.toLowerCase()} attack ideas and 3 simple accessory ideas suitable for a stickman fighting game. Attack ideas must stay inside this family: ${family.summary} Do not suggest kicks, punches, wrestling moves, flips, or body-animation-heavy attacks. Ideas must be easy to translate into the attack DSL using beams, projectiles, orbit shots, lobs, or ground waves. Accessory ideas must be purely cosmetic and easy to translate into a primitive-shape accessory DSL. Never suggest weapons, drones, summons, magic props, guns, swords, staffs, or combat tools as accessories.`,
+        text: `Generate 3 extremely short ${family.label.toLowerCase()} attack ideas and 3 simple accessory ideas suitable for a stickman fighting game. Attack ideas must stay inside this family: ${family.summary} Every attack idea must be delivered through either a simple punch or a simple hand swing. Do not suggest kicks, spins, wrestling moves, flips, grapples, or body-animation-heavy attacks. Ideas must be easy to translate into the attack DSL using beams, projectiles, orbit shots, lobs, or ground waves. Accessory ideas must be purely cosmetic and easy to translate into a primitive-shape accessory DSL. Never suggest weapons, drones, summons, magic props, guns, swords, staffs, or combat tools as accessories.`,
       }],
     }],
     systemInstruction: {
       parts: [{
-        text: `You are a creative director for a stickman game. Provide a JSON object with creative ideas. The active attack family is ${family.label}. Attack ideas must stay in that lane: ${family.summary} Never propose kicks, punches, grapples, martial-arts combos, or animation-heavy body attacks. Accessory ideas must stay decorative only and never become weapons, drones, summons, guns, swords, staffs, magic props, or combat tools. Use simple English phrases.`,
+        text: `You are a creative director for a stickman game. Provide a JSON object with creative ideas. The active attack family is ${family.label}. Attack ideas must stay in that lane: ${family.summary} Every attack idea must be something the fighter can deliver with a simple punch or a simple hand swing. Never propose kicks, spins, grapples, martial-arts combos, or animation-heavy body attacks. Accessory ideas must stay decorative only and never become weapons, drones, summons, guns, swords, staffs, magic props, or combat tools. Use simple English phrases.`,
       }],
     },
     generationConfig: {

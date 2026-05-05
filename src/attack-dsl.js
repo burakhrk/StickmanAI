@@ -18,6 +18,7 @@ export const ATTACK_WEAPON_KINDS = [
   "spear",
 ];
 export const ATTACK_ACTION_TYPES = ["projectiles", "beam"];
+export const ATTACK_DELIVERY_STYLES = ["punch", "swing"];
 export const ATTACK_PROJECTILE_PATTERNS = [
   "straight",
   "spread",
@@ -44,30 +45,35 @@ const FAMILY_DEFAULTS = {
     weaponKind: "saber",
     projectileKind: "chakram",
     pattern: "spread",
+    deliveryStyle: "swing",
   },
   ballistic: {
     palette: { primary: "#38bdf8", accent: "#f8fafc" },
     weaponKind: "rifle",
     projectileKind: "bullet",
     pattern: "straight",
+    deliveryStyle: "punch",
   },
   arcane: {
     palette: { primary: "#a78bfa", accent: "#67e8f9" },
     weaponKind: "staff",
     projectileKind: "bolt",
     pattern: "beam",
+    deliveryStyle: "swing",
   },
   explosive: {
     palette: { primary: "#f97316", accent: "#fde047" },
     weaponKind: "launcher",
     projectileKind: "rocket",
     pattern: "lob",
+    deliveryStyle: "punch",
   },
   summon: {
     palette: { primary: "#34d399", accent: "#93c5fd" },
     weaponKind: "orb",
     projectileKind: "orb",
     pattern: "orbit",
+    deliveryStyle: "swing",
   },
 };
 
@@ -131,6 +137,10 @@ function getDefaultProjectileKind(family) {
 function getDefaultPattern(family) {
   const pattern = getFamilyDefaults(family).pattern;
   return pattern === "beam" ? "straight" : pattern;
+}
+
+function getDefaultDeliveryStyle(family) {
+  return getFamilyDefaults(family).deliveryStyle || "swing";
 }
 
 function normalizePalette(family, primaryColor, accentColor) {
@@ -256,6 +266,7 @@ export function normalizeAttackSpec(rawAttack, activeFamily) {
       ? rawAttack.description.trim()
       : "Unnamed standardized attack",
     family,
+    deliveryStyle: pickEnum(rawAttack?.deliveryStyle, ATTACK_DELIVERY_STYLES, getDefaultDeliveryStyle(family)),
     palette,
     weaponVisual: normalizeWeaponVisual(rawAttack?.weaponVisual, family, palette),
     castFx: normalizeCastFx(rawAttack?.castFx, palette),
@@ -441,10 +452,42 @@ function applyCastFx(spec, player, handX, handY, runtime) {
   );
 }
 
+function applyDeliveryMotion(spec, player, angle, runtime) {
+  const forwardX = Math.cos(angle);
+  const forwardY = Math.sin(angle);
+
+  if (spec.deliveryStyle === "punch") {
+    player.vx += player.facing * Math.min(2.8, 1.05 + spec.actions.length * 0.22);
+    player.vy += Math.min(0.2, forwardY * 0.08);
+    runtime.spawnParticleEffect(
+      player.x + player.facing * player.headRadius * 0.9,
+      player.head.y + player.headRadius * 0.4,
+      5,
+      spec.palette.accent,
+      player.headRadius * 0.18,
+      2.2,
+      0.16,
+    );
+    return;
+  }
+
+  player.vx -= player.facing * Math.min(1.8, 0.4 + spec.actions.length * 0.16);
+  runtime.spawnParticleEffect(
+    player.x + forwardX * player.headRadius * 0.8,
+    player.head.y + forwardY * player.headRadius * 0.5,
+    7,
+    spec.palette.primary,
+    player.headRadius * 0.22,
+    2.8,
+    0.18,
+  );
+}
+
 export function compileAttackSpec(spec, runtime) {
   return function standardizedAttack(player, opponent, ctx, canvas, mouseX, mouseY) {
     const { handX, handY, angle } = getHandOrigin(player, opponent, mouseX, mouseY);
 
+    applyDeliveryMotion(spec, player, angle, runtime);
     applyCastFx(spec, player, handX, handY, runtime);
 
     spec.actions.forEach((action) => {
@@ -457,7 +500,6 @@ export function compileAttackSpec(spec, runtime) {
       }
     });
 
-    player.vx -= player.facing * Math.min(2.4, 0.35 + spec.actions.length * 0.3);
   };
 }
 
@@ -852,5 +894,5 @@ export function describeAttackSpec(spec) {
     .map((action) => (action.type === "beam" ? "beam" : action.pattern.replace(/_/g, " ")))
     .join(" + ");
 
-  return `${spec.description} (${spec.weaponVisual.kind}, ${actionSummary})`;
+  return `${spec.description} (${spec.deliveryStyle}, ${spec.weaponVisual.kind}, ${actionSummary})`;
 }

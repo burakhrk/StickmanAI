@@ -70,12 +70,10 @@ import { requestStructuredJson } from "./ai-client.js";
         'spin kick',
         'roundhouse',
         'dropkick',
-        'punch',
         'uppercut',
         'elbow',
         'knee strike',
         'headbutt',
-        'slap',
         'grapple',
         'wrestling',
         'martial art',
@@ -88,7 +86,6 @@ import { requestStructuredJson } from "./ai-client.js";
         'tekme',
         'doner tekme',
         'döner tekme',
-        'yumruk',
         'dirsek',
         'kafa atma',
         'gures',
@@ -1442,10 +1439,11 @@ import { requestStructuredJson } from "./ai-client.js";
         if (schemaType === 'attack' && isUnsupportedAttackPrompt(promptText)) {
             codeDisplayElement.innerHTML = `
                 <strong>Unsupported attack style.</strong><br>
-                Please request a weapon, projectile, gadget, or magic-based attack instead.<br>
-                Examples: lightsaber, plasma rifle, magic spell, arc cannon, fire staff.
+                Heavy body moves are blocked.<br>
+                Use attacks that can be delivered with a simple punch or a simple hand swing instead.<br>
+                Examples: punch-cast arc cannon, swing-cast saber wave, punch-fired plasma burst.
             `;
-            addMessage('System', 'Physical move attacks like kicks or punches are blocked. Please use weapons, projectiles, gadgets, or spells instead.', '#f59e0b');
+            addMessage('System', 'Heavy full-body attacks like kicks, spins, flips, and grapples are blocked. Only punch-delivered or swing-delivered attacks are allowed.', '#f59e0b');
             return;
         }
 
