@@ -20,6 +20,7 @@ import {
     normalizeAttackSpec,
     updateStandardProjectile,
 } from "./attack-dsl.js";
+import { getCuratedAttackPresets } from "./attack-presets.js";
 import {
     createAccessoryRenderer,
     describeAccessorySpec,
@@ -1084,6 +1085,72 @@ import { requestStructuredJson } from "./ai-client.js";
         return unsupportedAccessoryKeywords.some((keyword) => normalizedPrompt.includes(keyword));
     }
 
+    function inferPromptDeliveryStyle(promptText, familyId) {
+        const normalizedPrompt = promptText.toLocaleLowerCase('tr-TR');
+        const punchKeywords = ['punch', 'jab', 'shot', 'fire', 'blast', 'yumruk', 'rail', 'rifle', 'gun', 'pistol', 'cannon'];
+        const swingKeywords = ['swing', 'slash', 'arc', 'wave', 'saber', 'blade', 'sword', 'staff', 'wand', 'swipe'];
+
+        if (punchKeywords.some((keyword) => normalizedPrompt.includes(keyword))) {
+            return 'punch';
+        }
+
+        if (swingKeywords.some((keyword) => normalizedPrompt.includes(keyword))) {
+            return 'swing';
+        }
+
+        return familyId === 'ballistic' || familyId === 'explosive' ? 'punch' : 'swing';
+    }
+
+    function polishAttackPrompt(promptText, familyId) {
+        const family = getAttackFamilyConfig(familyId);
+        const deliveryStyle = inferPromptDeliveryStyle(promptText, familyId);
+        const heavyMoveDetected = isUnsupportedAttackPrompt(promptText);
+
+        let rewrittenIdea = promptText.trim();
+        const replacements = [
+            { pattern: /roundhouse|spin kick|doner tekme|döner tekme/gi, replacement: 'circular arc strike' },
+            { pattern: /dropkick|flying kick|tekme/gi, replacement: 'forward hand-cast burst' },
+            { pattern: /grapple|wrestling|gures|güreş/gi, replacement: 'close-range pull burst' },
+            { pattern: /uppercut/gi, replacement: 'rising hand burst' },
+            { pattern: /elbow|dirsek/gi, replacement: 'short hand swing arc' },
+            { pattern: /headbutt|kafa atma/gi, replacement: 'close hand shock burst' },
+            { pattern: /flip attack|spinning move|body slam/gi, replacement: 'compact impact wave' },
+        ];
+
+        replacements.forEach(({ pattern, replacement }) => {
+            rewrittenIdea = rewrittenIdea.replace(pattern, replacement);
+        });
+
+        rewrittenIdea = rewrittenIdea.replace(/\s+/g, ' ').trim();
+
+        const familyWeaponCue =
+            familyId === 'ballistic' ? 'a visible firearm or launcher' :
+            familyId === 'arcane' ? 'a visible wand, staff, or rune focus' :
+            familyId === 'explosive' ? 'a visible launcher or bomb-like hand prop' :
+            familyId === 'summon' ? 'a visible orb, sigil, or spectral hand focus' :
+            'a visible blade or thrown weapon';
+
+        const polishedPrompt = [
+            `User concept: ${rewrittenIdea}.`,
+            `Attack family: ${family.label}.`,
+            `Delivery style must be ${deliveryStyle}.`,
+            `Keep the attack readable, hand-delivered, and compatible with simple punch or hand swing animation only.`,
+            `Use ${familyWeaponCue} whenever the attack launches projectiles or energy.`,
+            `Prefer one strong action or two simple combined actions. Avoid chaotic patterns.`,
+        ].join(' ');
+
+        const note = heavyMoveDetected
+            ? `Heavy body-move wording was reinterpreted into a ${deliveryStyle}-delivered ${family.label.toLowerCase()} attack.`
+            : `Prompt polished for a clearer ${deliveryStyle}-delivered ${family.label.toLowerCase()} attack.`;
+
+        return {
+            polishedPrompt,
+            note,
+            deliveryStyle,
+            rewrittenIdea,
+        };
+    }
+
     function hasPromptValue(input) {
         return input.value.trim().length > 0;
     }
@@ -1109,6 +1176,7 @@ import { requestStructuredJson } from "./ai-client.js";
             button.classList.toggle('active', button.dataset.family === selectedAttackFamily);
         });
 
+        renderAttackPresets();
         syncPromptCtaState();
     }
 
@@ -1368,6 +1436,75 @@ import { requestStructuredJson } from "./ai-client.js";
         }
     }
 
+    function installAttackSpec(rawAttackSpec, codeDisplayElement, sourceLabel = 'Standardized attack loaded') {
+        try {
+            const normalizedAttack = normalizeAttackSpec(rawAttackSpec, selectedAttackFamily);
+            const compiledAttack = compileAttackSpec(normalizedAttack, {
+                spawnProjectile,
+                spawnParticleEffect,
+                FLOOR_Y,
+                GRAVITY,
+            });
+            const validationError = validateAttackFunction(compiledAttack);
+            if (validationError) {
+                throw validationError;
+            }
+
+            currentAccessories = currentAccessories.filter((acc) => !acc.isAttackEquipment);
+
+            const equipmentRenderer = createAttackEquipmentRenderer(normalizedAttack);
+            const equipmentValidationError = validateAccessoryRenderer(equipmentRenderer);
+            if (equipmentValidationError) {
+                throw equipmentValidationError;
+            }
+
+            currentAccessories.push({
+                id: 'att_eq_' + Date.now(),
+                description: normalizedAttack.description + ' (Equipment)',
+                code: equipmentRenderer,
+                location: 'hand',
+                isAttackEquipment: true,
+            });
+
+            currentAttackSpec = normalizedAttack;
+            dynamicAttackFunction = compiledAttack;
+            renderAccessoryList();
+
+            const attackSummary = describeAttackSpec(normalizedAttack);
+            codeDisplayElement.innerHTML = `
+                <div class="accessory-item">
+                    <span style="font-weight: bold; color: #d97706;">ACTIVE ATTACK:</span>
+                    <span>${normalizedAttack.description}</span>
+                    <span class="remove-accessory" onclick="resetAttack()">Remove</span>
+                </div>
+                <div style="font-size: 0.8rem; color: #6b7280; margin-top: 5px;">Family: ${getAttackFamilyConfig(normalizedAttack.family).label} | Base damage: ${STANDARD_ATTACK_DAMAGE}</div>
+                <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 4px;">${attackSummary}</div>
+            `;
+
+            addMessage('System', `${sourceLabel}: ${attackSummary}.`, '#d97706');
+            addMessage('System', `Attack gear loaded (${normalizedAttack.description}).`, '#d97706');
+            syncPromptCtaState();
+            updateCoachState();
+            return normalizedAttack;
+        } catch (e) {
+            codeDisplayElement.innerHTML = `
+                <strong>ATTACK DSL ERROR:</strong><br>
+                Error: ${e.message}<br>
+                <br>
+                <span class="debug-label">Returned attack payload:</span>
+                <pre class="debug-code-section" style="color: #FFF; background-color: #b91c1c;">${JSON.stringify(rawAttackSpec, null, 2)}</pre>
+            `;
+            addMessage('System', `The attack spec is invalid. Error: ${e.message}`, '#b91c1c');
+            currentAccessories = currentAccessories.filter((acc) => !acc.isAttackEquipment);
+            renderAccessoryList();
+            currentAttackSpec = null;
+            dynamicAttackFunction = defaultAttack;
+            syncPromptCtaState();
+            updateCoachState();
+            return null;
+        }
+    }
+
     function resetAttack(options = {}) {
         const { pauseGame = true, quiet = false } = options;
         const wasRunning = !isGamePaused;
@@ -1436,17 +1573,6 @@ import { requestStructuredJson } from "./ai-client.js";
             return;
         }
 
-        if (schemaType === 'attack' && isUnsupportedAttackPrompt(promptText)) {
-            codeDisplayElement.innerHTML = `
-                <strong>Unsupported attack style.</strong><br>
-                Heavy body moves are blocked.<br>
-                Use attacks that can be delivered with a simple punch or a simple hand swing instead.<br>
-                Examples: punch-cast arc cannon, swing-cast saber wave, punch-fired plasma burst.
-            `;
-            addMessage('System', 'Heavy full-body attacks like kicks, spins, flips, and grapples are blocked. Only punch-delivered or swing-delivered attacks are allowed.', '#f59e0b');
-            return;
-        }
-
         if (schemaType === 'accessory' && isUnsupportedAccessoryPrompt(promptText)) {
             codeDisplayElement.innerHTML = `
                 <strong>Unsupported accessory style.</strong><br>
@@ -1489,11 +1615,13 @@ import { requestStructuredJson } from "./ai-client.js";
         }
 
         let userQuery = `Generate the requested output for the following description: ${promptText}`;
+        let polishedAttackInput = null;
 
         if (schemaType === 'accessory') {
             userQuery = `The stickman currently has the following physical dimensions: ${JSON.stringify(contextData)}. Based on this context and the user's request: ${promptText}, generate one or more standardized accessory DSL objects using primitive visual layers.`;
         } else if (schemaType === 'attack') {
-            userQuery = `Based on the user's request: ${promptText}, generate a standardized combat attack DSL object. Use only weapon, projectile, gadget, summon, or magic behavior. If the request sounds like a body move, reinterpret it as a combat tool instead of animating the full character body.`;
+            polishedAttackInput = polishAttackPrompt(promptText, selectedAttackFamily);
+            userQuery = `Based on the user's request, generate a standardized combat attack DSL object. ${polishedAttackInput.polishedPrompt}`;
         }
 
         const payload = {
@@ -1535,66 +1663,10 @@ import { requestStructuredJson } from "./ai-client.js";
         }
 
         if (schemaType === 'attack') {
-            try {
-                const normalizedAttack = normalizeAttackSpec(responseText, selectedAttackFamily);
-                const compiledAttack = compileAttackSpec(normalizedAttack, {
-                    spawnProjectile,
-                    spawnParticleEffect,
-                    FLOOR_Y,
-                    GRAVITY,
-                });
-                const validationError = validateAttackFunction(compiledAttack);
-                if (validationError) {
-                    throw validationError;
-                }
-
-                currentAccessories = currentAccessories.filter((acc) => !acc.isAttackEquipment);
-
-                const equipmentRenderer = createAttackEquipmentRenderer(normalizedAttack);
-                const equipmentValidationError = validateAccessoryRenderer(equipmentRenderer);
-                if (equipmentValidationError) {
-                    throw equipmentValidationError;
-                }
-
-                currentAccessories.push({
-                    id: 'att_eq_' + Date.now(),
-                    description: normalizedAttack.description + ' (Equipment)',
-                    code: equipmentRenderer,
-                    location: 'hand',
-                    isAttackEquipment: true,
-                });
-
-                currentAttackSpec = normalizedAttack;
-                dynamicAttackFunction = compiledAttack;
-                renderAccessoryList();
-
-                const attackSummary = describeAttackSpec(normalizedAttack);
-                codeDisplayElement.innerHTML = `
-                    <div class="accessory-item">
-                        <span style="font-weight: bold; color: #d97706;">ACTIVE ATTACK:</span>
-                        <span>${normalizedAttack.description}</span>
-                        <span class="remove-accessory" onclick="resetAttack()">Remove</span>
-                    </div>
-                    <div style="font-size: 0.8rem; color: #6b7280; margin-top: 5px;">Family: ${getAttackFamilyConfig(normalizedAttack.family).label} | Base damage: ${STANDARD_ATTACK_DAMAGE}</div>
-                    <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 4px;">${attackSummary}</div>
-                `;
-
-                addMessage('System', `Standardized attack loaded: ${attackSummary}.`, '#d97706');
-                addMessage('System', `Attack gear loaded (${normalizedAttack.description}).`, '#d97706');
-            } catch (e) {
-                codeDisplayElement.innerHTML = `
-                    <strong>ATTACK DSL ERROR:</strong><br>
-                    Error: ${e.message}<br>
-                    <br>
-                    <span class="debug-label">Returned attack payload:</span>
-                    <pre class="debug-code-section" style="color: #FFF; background-color: #b91c1c;">${JSON.stringify(responseText, null, 2)}</pre>
-                `;
-                addMessage('System', `The AI-generated attack spec is invalid. Error: ${e.message}`, '#b91c1c');
-                currentAccessories = currentAccessories.filter((acc) => !acc.isAttackEquipment);
-                renderAccessoryList();
-                currentAttackSpec = null;
-                dynamicAttackFunction = defaultAttack;
+            if (polishedAttackInput?.note) {
+                addMessage('System', polishedAttackInput.note, '#60a5fa');
             }
+            installAttackSpec(responseText, codeDisplayElement, 'Standardized attack loaded');
         } else if (schemaType === 'accessory') {
             try {
                 const normalizedAccessories = normalizeAccessorySet(responseText);
@@ -1674,6 +1746,39 @@ import { requestStructuredJson } from "./ai-client.js";
                 targetInput.focus();
                 syncPromptCtaState();
                 updateCoachState();
+            };
+            listElement.appendChild(tag);
+        });
+    }
+
+    function renderAttackPresets() {
+        const listElement = document.getElementById('attack-presets-list');
+        const presets = getCuratedAttackPresets(selectedAttackFamily);
+        listElement.innerHTML = '';
+
+        if (!presets || presets.length === 0) {
+            listElement.innerHTML = '<span class="idea-placeholder">No presets found.</span>';
+            return;
+        }
+
+        presets.forEach((preset) => {
+            const tag = document.createElement('span');
+            tag.className = 'idea-tag';
+            tag.textContent = preset.label;
+            tag.title = preset.prompt;
+            tag.onclick = () => {
+                if (!isGamePaused) {
+                    isGamePaused = true;
+                    pausePlayButton.textContent = 'Start Match';
+                    addMessage('System', 'Game paused so you can load a curated preset.', '#3b82f6');
+                }
+                listElement.querySelectorAll('.idea-tag').forEach((chip) => chip.classList.remove('is-selected-idea'));
+                tag.classList.add('is-selected-idea');
+                attackPromptInput.value = preset.prompt;
+                attackPromptInput.focus();
+                syncPromptCtaState();
+                updateCoachState();
+                installAttackSpec(preset.attack, codeDisplayAttack, `Curated preset loaded (${preset.label})`);
             };
             listElement.appendChild(tag);
         });
