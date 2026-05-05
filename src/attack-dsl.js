@@ -103,6 +103,14 @@ function sanitizeColor(value, fallback) {
   return /^#[0-9a-fA-F]{6}$/.test(trimmed) ? trimmed : fallback;
 }
 
+function hexToRgba(hex, alpha) {
+  const normalized = sanitizeColor(hex, "#ffffff");
+  const r = Number.parseInt(normalized.slice(1, 3), 16);
+  const g = Number.parseInt(normalized.slice(3, 5), 16);
+  const b = Number.parseInt(normalized.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 function toRadians(degrees) {
   return degrees * (Math.PI / 180);
 }
@@ -141,6 +149,64 @@ function getDefaultPattern(family) {
 
 function getDefaultDeliveryStyle(family) {
   return getFamilyDefaults(family).deliveryStyle || "swing";
+}
+
+function inferWeaponKind(family, actions, fallbackKind) {
+  const primaryAction = actions[0] || {};
+  const primaryKind = primaryAction.projectileKind;
+  const primaryPattern = primaryAction.pattern;
+
+  if (family === "ballistic") {
+    if (primaryAction.type === "beam") {
+      return "railgun";
+    }
+    if (primaryKind === "rocket" || primaryPattern === "lob") {
+      return "launcher";
+    }
+    if (primaryAction.count > 1 || primaryPattern === "spread") {
+      return "rifle";
+    }
+    return "pistol";
+  }
+
+  if (family === "explosive") {
+    if (primaryKind === "rocket" || primaryPattern === "lob") {
+      return "launcher";
+    }
+    return "bomb";
+  }
+
+  if (family === "arcane") {
+    if (primaryAction.type === "beam") {
+      return "staff";
+    }
+    if (primaryKind === "orb") {
+      return "sigil";
+    }
+    return "wand";
+  }
+
+  if (family === "summon") {
+    if (primaryKind === "orb" || primaryPattern === "orbit") {
+      return "orb";
+    }
+    if (primaryKind === "shard") {
+      return "spear";
+    }
+    return "sigil";
+  }
+
+  if (family === "blade") {
+    if (primaryKind === "chakram") {
+      return "chakram";
+    }
+    if (primaryKind === "shard") {
+      return "sword";
+    }
+    return fallbackKind;
+  }
+
+  return fallbackKind;
 }
 
 function normalizePalette(family, primaryColor, accentColor) {
@@ -261,6 +327,10 @@ export function normalizeAttackSpec(rawAttack, activeFamily) {
     throw new Error("The attack DSL must contain at least one action.");
   }
 
+  const normalizedActions = actionsSource.slice(0, 3).map((action) => normalizeAction(action, family, palette));
+  const requestedWeaponVisual = normalizeWeaponVisual(rawAttack?.weaponVisual, family, palette);
+  const inferredWeaponKind = inferWeaponKind(family, normalizedActions, requestedWeaponVisual.kind);
+
   return {
     description: typeof rawAttack?.description === "string" && rawAttack.description.trim()
       ? rawAttack.description.trim()
@@ -268,9 +338,12 @@ export function normalizeAttackSpec(rawAttack, activeFamily) {
     family,
     deliveryStyle: pickEnum(rawAttack?.deliveryStyle, ATTACK_DELIVERY_STYLES, getDefaultDeliveryStyle(family)),
     palette,
-    weaponVisual: normalizeWeaponVisual(rawAttack?.weaponVisual, family, palette),
+    weaponVisual: {
+      ...requestedWeaponVisual,
+      kind: inferredWeaponKind,
+    },
     castFx: normalizeCastFx(rawAttack?.castFx, palette),
-    actions: actionsSource.slice(0, 3).map((action) => normalizeAction(action, family, palette)),
+    actions: normalizedActions,
   };
 }
 
@@ -331,11 +404,22 @@ function applyBeamAction(action, context, runtime) {
 }
 
 function createProjectileVisual(action, size) {
+  const trailLength =
+    action.projectileKind === "bullet" ? size * 4.5 :
+    action.projectileKind === "rocket" ? size * 5.5 :
+    action.projectileKind === "bolt" ? size * 4 :
+    action.projectileKind === "beamlet" ? size * 5 :
+    action.projectileKind === "flame" ? size * 3.8 :
+    action.projectileKind === "shard" ? size * 2.4 :
+    action.projectileKind === "chakram" ? size * 1.8 :
+    0;
+
   return {
     kind: action.projectileKind,
     primaryColor: action.color,
     accentColor: action.accentColor,
     size,
+    trailLength,
   };
 }
 
@@ -774,6 +858,26 @@ export function updateStandardProjectile(projectile, runtime) {
     detonateProjectile(projectile, runtime);
   }
 
+  const trailLength = projectile.visualSpec?.trailLength || 0;
+  const canTrail = trailLength > 0 && projectile.ageFrames > 1 && projectile.ageFrames % 2 === 0;
+  if (projectile.isAlive && canTrail) {
+    const trailX = projectile.x - projectile.vx * 0.35;
+    const trailY = projectile.y - projectile.vy * 0.35;
+    const trailColor =
+      projectile.visualSpec.kind === "bullet" || projectile.visualSpec.kind === "rocket"
+        ? projectile.visualSpec.accentColor
+        : projectile.visualSpec.primaryColor;
+    runtime.spawnParticleEffect(
+      trailX,
+      trailY,
+      1,
+      trailColor,
+      Math.max(1.4, projectile.size * 0.28),
+      Math.max(0.4, projectile.size * 0.12),
+      0.14,
+    );
+  }
+
   return true;
 }
 
@@ -789,6 +893,19 @@ export function drawStandardProjectile(ctx, projectile) {
   ctx.rotate(angle);
   ctx.shadowColor = visual.primaryColor;
   ctx.shadowBlur = Math.max(8, projectile.size * 1.6);
+
+  if (visual.trailLength > 0) {
+    const trailGradient = ctx.createLinearGradient(-visual.trailLength, 0, projectile.size * 0.5, 0);
+    trailGradient.addColorStop(0, "rgba(255,255,255,0)");
+    trailGradient.addColorStop(0.55, hexToRgba(visual.primaryColor, 0.34));
+    trailGradient.addColorStop(1, hexToRgba(visual.accentColor, 0.82));
+    ctx.strokeStyle = trailGradient;
+    ctx.lineWidth = Math.max(1, projectile.size * 0.45);
+    ctx.beginPath();
+    ctx.moveTo(-visual.trailLength, 0);
+    ctx.lineTo(projectile.size * 0.45, 0);
+    ctx.stroke();
+  }
 
   switch (visual.kind) {
     case "bullet": {

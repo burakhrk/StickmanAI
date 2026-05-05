@@ -1831,7 +1831,8 @@ import { requestStructuredJson } from "./ai-client.js";
 
                 if (p.isAlive && distanceSq < collisionDistSq) {
                     target.takeDamage(p.damage);
-                    target.vx += (p.vx > 0 ? 1 : -1) * 5;
+                    const knockback = p.behaviorSpec?.knockback || 5;
+                    target.vx += (p.vx > 0 ? 1 : -1) * knockback;
                     p.isAlive = false;
                     spawnParticleEffect(p.x, p.y, 15, p.color, 6, 10, 0.4);
                 }
