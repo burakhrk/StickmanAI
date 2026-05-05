@@ -24,12 +24,12 @@ export const ACCESSORY_KINDS = [
   "armor",
   "cape",
   "backpack",
-  "jetpack",
-  "gauntlet",
+  "scarf",
+  "belt",
   "bracer",
   "boots",
-  "orb",
-  "drone",
+  "shoulderpad",
+  "badge",
 ];
 
 export const ACCESSORY_LAYER_SHAPES = [

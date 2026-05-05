@@ -95,6 +95,44 @@ import { requestStructuredJson } from "./ai-client.js";
         'güreş',
     ];
 
+    const unsupportedAccessoryKeywords = [
+        'weapon',
+        'sword',
+        'blade',
+        'lightsaber',
+        'saber',
+        'gun',
+        'rifle',
+        'pistol',
+        'cannon',
+        'shotgun',
+        'sniper',
+        'rocket',
+        'launcher',
+        'staff',
+        'wand',
+        'spell',
+        'projectile',
+        'turret',
+        'drone',
+        'orb',
+        'summon',
+        'pet',
+        'companion',
+        'weaponized',
+        'silah',
+        'kilic',
+        'k?l??',
+        'tabanca',
+        'tufek',
+        't?fek',
+        'buyu',
+        'b?y?',
+        'dron',
+        'cagri',
+        '?a?r?',
+    ];
+
     let isGeneratingCode = false;
     let ideasLoadedForFamily = null;
     let ideasAreLoading = false;
@@ -1044,6 +1082,11 @@ import { requestStructuredJson } from "./ai-client.js";
         return unsupportedAttackKeywords.some((keyword) => normalizedPrompt.includes(keyword));
     }
 
+    function isUnsupportedAccessoryPrompt(promptText) {
+        const normalizedPrompt = promptText.toLocaleLowerCase('tr-TR');
+        return unsupportedAccessoryKeywords.some((keyword) => normalizedPrompt.includes(keyword));
+    }
+
     function hasPromptValue(input) {
         return input.value.trim().length > 0;
     }
@@ -1406,6 +1449,16 @@ import { requestStructuredJson } from "./ai-client.js";
             return;
         }
 
+        if (schemaType === 'accessory' && isUnsupportedAccessoryPrompt(promptText)) {
+            codeDisplayElement.innerHTML = `
+                <strong>Unsupported accessory style.</strong><br>
+                Accessories are decorative only and cannot be weapons, drones, summons, or combat props.<br>
+                Examples: crown, visor, cape, scarf, amulet.
+            `;
+            addMessage('System', 'Accessory generation is cosmetic-only. Please request decoration, clothing, armor trim, or ornaments instead of weapons or combat tools.', '#f59e0b');
+            return;
+        }
+
         isGamePaused = true;
         isGeneratingCode = true;
         updateCoachState();
@@ -1577,7 +1630,7 @@ import { requestStructuredJson } from "./ai-client.js";
                     <strong>Loaded ${normalizedAccessories.length} accessory item${normalizedAccessories.length === 1 ? '' : 's'}.</strong><br>
                     <span style="color: #94a3b8;">${accessorySummaries}</span>
                 `;
-                addMessage('System', `Standardized accessories loaded: ${accessorySummaries}.`, '#059669');
+                addMessage('System', `Cosmetic accessories loaded: ${accessorySummaries}. These do not affect gameplay.`, '#059669');
             } catch (e) {
                 codeDisplayElement.innerHTML = `
                     <strong>ACCESSORY DSL ERROR:</strong><br>

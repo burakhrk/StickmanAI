@@ -58,9 +58,9 @@ export const DEFAULT_ATTACK_IDEAS_BY_FAMILY = Object.fromEntries(
 export const DEFAULT_ATTACK_IDEAS = DEFAULT_ATTACK_IDEAS_BY_FAMILY[DEFAULT_ATTACK_FAMILY];
 
 export const DEFAULT_ACCESSORY_IDEAS = [
-  "Robot arm weapon",
-  "Plasma rifle",
-  "Sniper goggles",
+  "Golden crown",
+  "Tinted visor",
+  "Layered cape",
 ];
 
 export function getAttackFamilyConfig(familyId = DEFAULT_ATTACK_FAMILY) {
@@ -102,6 +102,8 @@ GAME ENGINE DETAILS AND AVAILABLE VARIABLES:
     - Do NOT write raw JavaScript for accessories either.
     - Accessory visuals must be described with simple primitive layers such as circles, ellipses, rounded rectangles, polygons, lines, and arcs.
     - Keep accessory layer stacks readable and compact.
+    - Accessories are purely cosmetic. They must never function like weapons, projectiles, summons, companions, drones, or gameplay tools.
+    - Do not generate guns, swords, staffs, cannons, drones, orbiting orbs, spell circles, turrets, thrusters, or anything that looks attack-ready.
 `;
 
 export const attackSchema = {
@@ -548,6 +550,8 @@ export function buildAccessorySystemPrompt() {
         - Use palette aliases such as "primary", "accent", and "detail" inside layers when possible.
         - Favor bold, high-contrast accessories that stay visible on the bright arena.
         - Avoid giant props that cover the whole fighter.
+        - Accessories must be decorative only: hats, crowns, goggles, armor trim, capes, amulets, scarves, backpacks, boots, badges, and similar cosmetics.
+        - Never return weapons, handheld combat props, summoned objects, drones, spell effects, floating orbs, turrets, or anything implying gameplay mechanics.
 
         TASK: Return a single JSON OBJECT strictly adhering to the accessorySchema. Put all generated items inside the 'accessories' array.
         `;
@@ -558,12 +562,12 @@ export function buildIdeasPayload(attackFamilyId = DEFAULT_ATTACK_FAMILY) {
   return {
     contents: [{
       parts: [{
-        text: `Generate 3 extremely short ${family.label.toLowerCase()} attack ideas and 3 simple accessory ideas suitable for a stickman fighting game. Attack ideas must stay inside this family: ${family.summary} Do not suggest kicks, punches, wrestling moves, flips, or body-animation-heavy attacks. Ideas must be easy to translate into the attack DSL using beams, projectiles, orbit shots, lobs, or ground waves. Accessory ideas must be easy to translate into a primitive-shape accessory DSL.`,
+        text: `Generate 3 extremely short ${family.label.toLowerCase()} attack ideas and 3 simple accessory ideas suitable for a stickman fighting game. Attack ideas must stay inside this family: ${family.summary} Do not suggest kicks, punches, wrestling moves, flips, or body-animation-heavy attacks. Ideas must be easy to translate into the attack DSL using beams, projectiles, orbit shots, lobs, or ground waves. Accessory ideas must be purely cosmetic and easy to translate into a primitive-shape accessory DSL. Never suggest weapons, drones, summons, magic props, guns, swords, staffs, or combat tools as accessories.`,
       }],
     }],
     systemInstruction: {
       parts: [{
-        text: `You are a creative director for a stickman game. Provide a JSON object with creative ideas. The active attack family is ${family.label}. Attack ideas must stay in that lane: ${family.summary} Never propose kicks, punches, grapples, martial-arts combos, or animation-heavy body attacks. Use simple English phrases.`,
+        text: `You are a creative director for a stickman game. Provide a JSON object with creative ideas. The active attack family is ${family.label}. Attack ideas must stay in that lane: ${family.summary} Never propose kicks, punches, grapples, martial-arts combos, or animation-heavy body attacks. Accessory ideas must stay decorative only and never become weapons, drones, summons, guns, swords, staffs, magic props, or combat tools. Use simple English phrases.`,
       }],
     },
     generationConfig: {
